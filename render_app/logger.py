@@ -61,6 +61,17 @@ def log_data():
             writer.writerow(data)
         time.sleep(1)
 
+@app.route("/")
+def home():
+    return {
+        "status": "✅ BTC Logger is running",
+        "endpoints": [
+            "/data.csv",
+            "/csv-list",
+            "/csv/<filename>"
+        ]
+    }
+
 @app.route("/data.csv")
 def get_current_csv():
     today_file = os.path.join(DATA_FOLDER, f"{datetime.utcnow().date()}.csv")
