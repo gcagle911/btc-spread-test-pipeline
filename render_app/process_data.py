@@ -3,7 +3,7 @@ import os
 from datetime import datetime
 
 DATA_FOLDER = "data"
-OUTPUT_FILE = "output.json"
+OUTPUT_FILE = os.path.join(DATA_FOLDER, "output.json")
 
 def process_csv_to_json():
     today = datetime.utcnow().date()
