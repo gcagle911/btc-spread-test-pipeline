@@ -108,7 +108,7 @@ from flask import send_from_directory
 
 @app.route("/output.json")
 def serve_output_json():
-    return send_from_directory(".", "output.json")
+    return send_from_directory("data", "output.json")
 
 def run_app():
     app.run(host="0.0.0.0", port=10000)
