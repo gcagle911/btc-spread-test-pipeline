@@ -106,6 +106,9 @@ def download_csv(filename):
 
 def run_app():
     app.run(host="0.0.0.0", port=10000)
+    
+import process_data
+process_data.process_csv_to_json()
 
 if __name__ == "__main__":
     threading.Thread(target=log_data, daemon=True).start()
