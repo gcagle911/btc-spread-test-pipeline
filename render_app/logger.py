@@ -1,104 +1,92 @@
-# logger.py (Final enterprise version with 1-second logging + daily CSV rotation)
 import requests
 import csv
 import time
-from datetime import datetime
-from flask import Flask, send_file
-import threading
 import os
+from datetime import datetime
+from flask import Flask, jsonify, send_file, send_from_directory, abort
+import threading
 
 app = Flask(__name__)
 
-def get_csv_filename():
-    return f"{datetime.utcnow().date()}.csv"
+DATA_FOLDER = "data"
+os.makedirs(DATA_FOLDER, exist_ok=True)
 
-def write_header_if_needed(filename):
-    if not os.path.exists(filename):
-        with open(filename, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow([
-                'timestamp',
-                'price', 'bid', 'ask', 'spread_L1',
-                'spread_L20', 'spread_plus_minus_5pct',
-                'volume'
-            ])
+def fetch_orderbook():
+    url = "https://api.exchange.coinbase.com/products/BTC-USD/book?level=2"
+    response = requests.get(url)
+    data = response.json()
 
-def fetch_data():
-    url = 'https://api.exchange.coinbase.com/products/BTC-USD/book?level=2'
-    stats_url = 'https://api.exchange.coinbase.com/products/BTC-USD/stats'
-    headers = {'User-Agent': 'Mozilla/5.0'}
+    bids = data.get("bids", [])
+    asks = data.get("asks", [])
 
-    book = requests.get(url, headers=headers).json()
-    stats = requests.get(stats_url, headers=headers).json()
-
-    best_bid = float(book['bids'][0][0])
-    best_ask = float(book['asks'][0][0])
+    best_bid = float(bids[0][0])
+    best_ask = float(asks[0][0])
     mid_price = (best_bid + best_ask) / 2
-    spread_L1 = round(best_ask - best_bid, 2)
+    spread = best_ask - best_bid
 
-    # Top 20 levels
-    top_20_bids = [float(bid[0]) for bid in book['bids'][:20]]
-    top_20_asks = [float(ask[0]) for ask in book['asks'][:20]]
-    spread_L20 = round(min(top_20_asks) - max(top_20_bids), 2)
-
-    # ±5% depth spread
-    lower = mid_price * 0.95
-    upper = mid_price * 1.05
-    bounded_bids = [float(bid[0]) for bid in book['bids'] if float(bid[0]) >= lower]
-    bounded_asks = [float(ask[0]) for ask in book['asks'] if float(ask[0]) <= upper]
-    if bounded_bids and bounded_asks:
-        spread_pm_5pct = round(min(bounded_asks) - max(bounded_bids), 2)
+    # L20 average spread calculation
+    top_bids = [float(b[0]) for b in bids[:20]]
+    top_asks = [float(a[0]) for a in asks[:20]]
+    if len(top_bids) < 20 or len(top_asks) < 20:
+        spread_avg_L20 = spread  # fallback
+        spread_avg_L20_pct = (spread / mid_price) * 100
     else:
-        spread_pm_5pct = None
+        bid_avg = sum(top_bids) / 20
+        ask_avg = sum(top_asks) / 20
+        spread_avg_L20 = ask_avg - bid_avg
+        spread_avg_L20_pct = (spread_avg_L20 / mid_price) * 100
 
-    volume = float(stats['volume'])
-
+    volume = sum(float(b[1]) for b in bids[:20]) + sum(float(a[1]) for a in asks[:20])
     return {
-        'timestamp': datetime.utcnow().isoformat(),
-        'price': mid_price,
-        'bid': best_bid,
-        'ask': best_ask,
-        'spread_L1': spread_L1,
-        'spread_L20': spread_L20,
-        'spread_plus_minus_5pct': spread_pm_5pct,
-        'volume': volume
+        "timestamp": datetime.utcnow().isoformat(),
+        "asset": "BTC-USD",
+        "price": mid_price,
+        "bid": best_bid,
+        "ask": best_ask,
+        "spread": spread,
+        "volume": volume,
+        "spread_avg_L20": spread_avg_L20,
+        "spread_avg_L20_pct": spread_avg_L20_pct
     }
 
-def log_to_csv():
+def log_data():
     while True:
-        try:
-            filename = get_csv_filename()
-            write_header_if_needed(filename)
-            row = fetch_data()
-            with open(filename, 'a', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow([
-                    row['timestamp'],
-                    row['price'], row['bid'], row['ask'], row['spread_L1'],
-                    row['spread_L20'], row['spread_plus_minus_5pct'],
-                    row['volume']
-                ])
-            time.sleep(1)  # 1-second logging
-        except Exception as e:
-            print("Logging error:", e)
-            time.sleep(1)
+        data = fetch_orderbook()
+        filename = os.path.join(DATA_FOLDER, f"{datetime.utcnow().date()}.csv")
+        file_exists = os.path.isfile(filename)
+        with open(filename, "a", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=data.keys())
+            if not file_exists:
+                writer.writeheader()
+            writer.writerow(data)
+        time.sleep(1)
 
-@app.route('/')
-def index():
-    return 'Logger running (enterprise grade)'
+@app.route("/data.csv")
+def get_current_csv():
+    today_file = os.path.join(DATA_FOLDER, f"{datetime.utcnow().date()}.csv")
+    if os.path.exists(today_file):
+        return send_file(today_file, as_attachment=False)
+    else:
+        return "No data file available", 404
 
-@app.route('/data')
-def get_data():
-    filename = get_csv_filename()
-    return send_file(filename, mimetype='text/csv')
+@app.route("/csv-list")
+def list_csvs():
+    try:
+        files = sorted(os.listdir(DATA_FOLDER))
+        return jsonify({"available_csvs": files})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-threading.Thread(target=log_to_csv, daemon=True).start()
+@app.route("/csv/<filename>")
+def download_csv(filename):
+    try:
+        return send_from_directory(DATA_FOLDER, filename)
+    except FileNotFoundError:
+        abort(404)
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
-    
-@app.route('/data')
-def download_csv():
-    today = datetime.now().strftime('%Y-%m-%d')
-    filename = f"{today}.csv"
-    return send_file(filename, as_attachment=True)
+def run_app():
+    app.run(host="0.0.0.0", port=10000)
+
+if __name__ == "__main__":
+    threading.Thread(target=log_data, daemon=True).start()
+    run_app()
