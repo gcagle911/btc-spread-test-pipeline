@@ -9,6 +9,8 @@ import threading
 app = Flask(__name__)
 
 DATA_FOLDER = "data"
+def get_current_csv_filename():
+    return f"{datetime.utcnow().date()}.csv"
 os.makedirs(DATA_FOLDER, exist_ok=True)
 
 def fetch_orderbook():
