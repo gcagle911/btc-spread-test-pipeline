@@ -40,6 +40,7 @@ def fetch_orderbook():
     return {
         "timestamp": datetime.utcnow().isoformat(),
         "asset": "BTC-USD",
+        "exchange": "Coinbase",
         "price": mid_price,
         "bid": best_bid,
         "ask": best_ask,
