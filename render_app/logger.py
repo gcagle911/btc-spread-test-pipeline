@@ -1,3 +1,4 @@
+from process_data import process_csv_to_json
 import requests
 import csv
 import time
@@ -65,6 +66,8 @@ def log_data():
             if not file_exists:
                 writer.writeheader()
             writer.writerow(data)
+
+        process_csv_to_json()
 
         elapsed = time.time() - start_time
         sleep_time = max(0, 1.0 - elapsed)
