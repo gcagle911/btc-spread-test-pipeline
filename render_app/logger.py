@@ -52,15 +52,21 @@ def fetch_orderbook():
 
 def log_data():
     while True:
+        start_time = time.time()
+
         data = fetch_orderbook()
-        filename = os.path.join(DATA_FOLDER, f"{datetime.utcnow().date()}.csv")
+        filename = os.path.join(DATA_FOLDER, get_current_csv_filename())
         file_exists = os.path.isfile(filename)
+
         with open(filename, "a", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=data.keys())
             if not file_exists:
                 writer.writeheader()
             writer.writerow(data)
-        time.sleep(1)
+
+        elapsed = time.time() - start_time
+        sleep_time = max(0, 1.0 - elapsed)
+        time.sleep(sleep_time)
 
 @app.route("/")
 def home():
