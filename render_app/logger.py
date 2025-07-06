@@ -122,3 +122,6 @@ process_data.process_csv_to_json()
 if __name__ == "__main__":
     threading.Thread(target=log_data, daemon=True).start()
     run_app()
+
+import subprocess
+subprocess.run(["python", "process_data.py"])
