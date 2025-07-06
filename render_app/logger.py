@@ -106,9 +106,12 @@ def download_csv(filename):
 
 from flask import send_from_directory
 
+import os
+
 @app.route("/output.json")
 def serve_output_json():
-    return send_from_directory("data", "output.json")
+    output_path = os.path.join(os.path.dirname(__file__), "data")
+    return send_from_directory(output_path, "output.json")
 
 def run_app():
     app.run(host="0.0.0.0", port=10000)
