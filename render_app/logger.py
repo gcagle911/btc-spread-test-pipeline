@@ -96,3 +96,9 @@ threading.Thread(target=log_to_csv, daemon=True).start()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
+    
+@app.route('/data')
+def download_csv():
+    today = datetime.now().strftime('%Y-%m-%d')
+    filename = f"{today}.csv"
+    return send_file(filename, as_attachment=True)
