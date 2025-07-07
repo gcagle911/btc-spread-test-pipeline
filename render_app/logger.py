@@ -9,6 +9,8 @@ import threading
 
 app = Flask(__name__)
 
+last_logged = {"timestamp": None}
+
 DATA_FOLDER = "data"
 def get_current_csv_filename():
     return f"{datetime.utcnow().date()}.csv"
@@ -56,18 +58,24 @@ def fetch_orderbook():
 def log_data():
     while True:
         start_time = time.time()
+        try:
+            data = fetch_orderbook()
+            filename = os.path.join(DATA_FOLDER, get_current_csv_filename())
+            file_exists = os.path.isfile(filename)
 
-        data = fetch_orderbook()
-        filename = os.path.join(DATA_FOLDER, get_current_csv_filename())
-        file_exists = os.path.isfile(filename)
+            with open(filename, "a", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=data.keys())
+                if not file_exists:
+                    writer.writeheader()
+                writer.writerow(data)
 
-        with open(filename, "a", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=data.keys())
-            if not file_exists:
-                writer.writeheader()
-            writer.writerow(data)
+            last_logged["timestamp"] = data["timestamp"]  # ✅ update heartbeat
+            print(f"[{data['timestamp']}] ✅ Logged")
 
-        process_csv_to_json()
+            process_csv_to_json()
+
+        except Exception as e:
+            print("🚨 Error in logger loop:", str(e))
 
         elapsed = time.time() - start_time
         sleep_time = max(0, 1.0 - elapsed)
@@ -77,6 +85,7 @@ def log_data():
 def home():
     return {
         "status": "✅ BTC Logger is running",
+        "last_log_time": last_logged["timestamp"],
         "endpoints": [
             "/data.csv",
             "/csv-list",
