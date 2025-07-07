@@ -3,7 +3,7 @@ import requests
 import csv
 import time
 import os
-from datetime import datetime
+from datetime import datetime, UTC
 from flask import Flask, jsonify, send_file, send_from_directory, abort
 import threading
 
@@ -13,7 +13,7 @@ last_logged = {"timestamp": None}
 
 DATA_FOLDER = "data"
 def get_current_csv_filename():
-    return f"{datetime.utcnow().date()}.csv"
+     return f"{datetime.now(UTC).date()}.csv"
 os.makedirs(DATA_FOLDER, exist_ok=True)
 
 def fetch_orderbook():
