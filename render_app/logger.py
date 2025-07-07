@@ -1,3 +1,4 @@
+from flask_cors import CORS
 from process_data import process_csv_to_json
 import requests
 import csv
@@ -8,6 +9,7 @@ from flask import Flask, jsonify, send_file, send_from_directory, abort
 import threading
 
 app = Flask(__name__)
+CORS(app)
 
 last_logged = {"timestamp": None}
 
