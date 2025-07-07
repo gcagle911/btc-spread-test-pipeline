@@ -18,7 +18,7 @@ def process_csv_to_json():
     # Resample to 1-minute intervals
     df.set_index("timestamp", inplace=True)
     df.index = pd.to_datetime(df.index)
-    df_1min = df.resample("1T").agg({
+    df_1min = df.resample("1min").agg({
         "price": "last",
         "spread_avg_L20_pct": "mean"
     }).dropna()
