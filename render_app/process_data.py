@@ -1,23 +1,37 @@
 import pandas as pd
 import os
+import json
 from datetime import datetime
 
 DATA_FOLDER = "data"
-OUTPUT_FILE = os.path.join(DATA_FOLDER, "output.json")
 
 def process_csv_to_json():
-    today = datetime.utcnow().date()
-    csv_file = os.path.join(DATA_FOLDER, f"{today}.csv")
+    today = datetime.utcnow().strftime("%Y-%m-%d")
 
-    if not os.path.exists(csv_file):
-        print("CSV file not found.")
+    # Find all CSVs from today
+    files = sorted(
+        f for f in os.listdir(DATA_FOLDER)
+        if f.startswith(today) and f.endswith(".csv")
+    )
+
+    if not files:
+        print(f"❌ No CSVs found for {today}")
         return
 
-    df = pd.read_csv(csv_file, parse_dates=["timestamp"])
+    latest_file = files[-1]
+    csv_path = os.path.join(DATA_FOLDER, latest_file)
+    print(f"📄 Processing: {csv_path}")
+
+    df = pd.read_csv(csv_path, parse_dates=["timestamp"])
+
+    if df.empty:
+        print("❌ CSV is empty")
+        return
 
     # Resample to 1-minute intervals
     df.set_index("timestamp", inplace=True)
     df.index = pd.to_datetime(df.index)
+
     df_1min = df.resample("1min").agg({
         "price": "last",
         "spread_avg_L20_pct": "mean"
@@ -28,11 +42,13 @@ def process_csv_to_json():
     df_1min["ma_100"] = df_1min["spread_avg_L20_pct"].rolling(window=100).mean()
     df_1min["ma_200"] = df_1min["spread_avg_L20_pct"].rolling(window=200).mean()
 
-    # Save output
+    # Save output with today's date in filename
     df_1min.reset_index(inplace=True)
     df_1min.rename(columns={"timestamp": "time"}, inplace=True)
-    df_1min.to_json(OUTPUT_FILE, orient="records", date_format="iso")
-    print("✅ output.json updated")
+
+    output_path = os.path.join(DATA_FOLDER, f"output_{today}.json")
+    df_1min.to_json(output_path, orient="records", date_format="iso")
+    print(f"✅ Saved: {output_path}")
 
 if __name__ == "__main__":
     process_csv_to_json()
