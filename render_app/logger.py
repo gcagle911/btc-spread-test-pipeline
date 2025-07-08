@@ -8,6 +8,7 @@ from datetime import datetime, UTC
 from flask import Flask, jsonify, send_file, send_from_directory, abort
 import threading
 import subprocess
+import merge_and_process
 
 app = Flask(__name__)
 CORS(app)
@@ -82,6 +83,7 @@ def log_data():
             print(f"[{data['timestamp']}] ✅ Logged to {filename}")
 
             process_csv_to_json()
+            merge_and_process.process_all_csvs()
 
         except Exception as e:
             print("🚨 Error in logger loop:", str(e))
