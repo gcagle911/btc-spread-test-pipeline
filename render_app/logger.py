@@ -132,6 +132,14 @@ def serve_output_json():
     output_path = os.path.join(os.path.dirname(__file__), "data")
     return send_from_directory(output_path, "output.json")
 
+@app.route("/json/<filename>")
+def serve_json_file(filename):
+    file_path = os.path.join(DATA_FOLDER, filename)
+    if os.path.exists(file_path):
+        return send_file(file_path, mimetype='application/json')
+    else:
+        return "JSON file not found", 404
+        
 def run_app():
     app.run(host="0.0.0.0", port=10000)
 
