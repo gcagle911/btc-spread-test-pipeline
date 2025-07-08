@@ -136,6 +136,16 @@ def serve_json_file(date):
     else:
         return "JSON file not found", 404
 
+@app.route("/output-latest.json")
+def serve_latest_output():
+    today = datetime.utcnow().date()
+    filename = f"output_{today}.json"
+    file_path = os.path.join(DATA_FOLDER, filename)
+    if os.path.exists(file_path):
+        return send_file(file_path, mimetype='application/json')
+    else:
+        return "Latest JSON not available", 404
+
 # ---- App Runner ----
 
 def run_app():
