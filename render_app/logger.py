@@ -7,6 +7,7 @@ import os
 from datetime import datetime, UTC
 from flask import Flask, jsonify, send_file, send_from_directory, abort
 import threading
+import subprocess
 
 app = Flask(__name__)
 CORS(app)
@@ -14,9 +15,15 @@ CORS(app)
 last_logged = {"timestamp": None}
 
 DATA_FOLDER = "data"
-def get_current_csv_filename():
-     return f"{datetime.now(UTC).date()}.csv"
 os.makedirs(DATA_FOLDER, exist_ok=True)
+
+# 🔁 Rotates files every 8 hours (00, 08, 16 UTC)
+def get_current_csv_filename():
+    now = datetime.now(UTC)
+    hour_block = (now.hour // 8) * 8
+    block_label = f"{hour_block:02d}"
+    date_str = now.strftime("%Y-%m-%d")
+    return f"{date_str}_{block_label}.csv"
 
 def fetch_orderbook():
     url = "https://api.exchange.coinbase.com/products/BTC-USD/book?level=2"
@@ -35,7 +42,7 @@ def fetch_orderbook():
     top_bids = [float(b[0]) for b in bids[:20]]
     top_asks = [float(a[0]) for a in asks[:20]]
     if len(top_bids) < 20 or len(top_asks) < 20:
-        spread_avg_L20 = spread  # fallback
+        spread_avg_L20 = spread
         spread_avg_L20_pct = (spread / mid_price) * 100
     else:
         bid_avg = sum(top_bids) / 20
@@ -71,8 +78,8 @@ def log_data():
                     writer.writeheader()
                 writer.writerow(data)
 
-            last_logged["timestamp"] = data["timestamp"]  # ✅ update heartbeat
-            print(f"[{data['timestamp']}] ✅ Logged")
+            last_logged["timestamp"] = data["timestamp"]
+            print(f"[{data['timestamp']}] ✅ Logged to {filename}")
 
             process_csv_to_json()
 
@@ -97,9 +104,9 @@ def home():
 
 @app.route("/data.csv")
 def get_current_csv():
-    today_file = os.path.join(DATA_FOLDER, f"{datetime.utcnow().date()}.csv")
-    if os.path.exists(today_file):
-        return send_file(today_file, as_attachment=False)
+    filename = os.path.join(DATA_FOLDER, get_current_csv_filename())
+    if os.path.exists(filename):
+        return send_file(filename, as_attachment=False)
     else:
         return "No data file available", 404
 
@@ -118,10 +125,6 @@ def download_csv(filename):
     except FileNotFoundError:
         abort(404)
 
-from flask import send_from_directory
-
-import os
-
 @app.route("/output.json")
 def serve_output_json():
     output_path = os.path.join(os.path.dirname(__file__), "data")
@@ -129,13 +132,13 @@ def serve_output_json():
 
 def run_app():
     app.run(host="0.0.0.0", port=10000)
-    
-import process_data
-process_data.process_csv_to_json()
+
+# Initial JSON prep on startup
+process_csv_to_json()
 
 if __name__ == "__main__":
     threading.Thread(target=log_data, daemon=True).start()
     run_app()
 
-import subprocess
+# Optional: kick off processing again at boot
 subprocess.run(["python", "process_data.py"])
