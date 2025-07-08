@@ -7,8 +7,6 @@ import os
 from datetime import datetime, UTC
 from flask import Flask, jsonify, send_file, send_from_directory, abort
 import threading
-import subprocess
-import merge_and_process
 
 app = Flask(__name__)
 CORS(app)
@@ -82,8 +80,8 @@ def log_data():
             last_logged["timestamp"] = data["timestamp"]
             print(f"[{data['timestamp']}] ✅ Logged to {filename}")
 
+            # Run JSON generation based on today's latest CSV
             process_csv_to_json()
-            merge_and_process.process_all_csvs()
 
         except Exception as e:
             print("🚨 Error in logger loop:", str(e))
@@ -91,6 +89,8 @@ def log_data():
         elapsed = time.time() - start_time
         sleep_time = max(0, 1.0 - elapsed)
         time.sleep(sleep_time)
+
+# ---- Flask Routes ----
 
 @app.route("/")
 def home():
@@ -100,7 +100,8 @@ def home():
         "endpoints": [
             "/data.csv",
             "/csv-list",
-            "/csv/<filename>"
+            "/csv/<filename>",
+            "/json/output_<YYYY-MM-DD>.json"
         ]
     }
 
@@ -127,28 +128,20 @@ def download_csv(filename):
     except FileNotFoundError:
         abort(404)
 
-@app.route("/output.json")
-def serve_output_json():
-    output_path = os.path.join(os.path.dirname(__file__), "data")
-    return send_from_directory(output_path, "output.json")
-
-@app.route("/json/<filename>")
-def serve_json_file(filename):
-    file_path = os.path.join(DATA_FOLDER, filename)
+@app.route("/json/output_<date>.json")
+def serve_json_file(date):
+    file_path = os.path.join(DATA_FOLDER, f"output_{date}.json")
     if os.path.exists(file_path):
         return send_file(file_path, mimetype='application/json')
     else:
         return "JSON file not found", 404
-        
+
+# ---- App Runner ----
+
 def run_app():
     app.run(host="0.0.0.0", port=10000)
 
-# Initial JSON prep on startup
-process_csv_to_json()
-
+# Start logger and web server
 if __name__ == "__main__":
     threading.Thread(target=log_data, daemon=True).start()
     run_app()
-
-# Optional: kick off processing again at boot
-subprocess.run(["python", "process_data.py"])
