@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BTC Continuous Chart Example</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/date-fns@2.29.3/index.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .chart-container { width: 100%; height: 500px; margin: 20px 0; }
+        .info { background: #f0f0f0; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        .status { padding: 10px; border-radius: 5px; margin: 10px 0; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <h1>🚀 BTC Historical Chart - Continuous Data</h1>
+    
+    <div class="info">
+        <h3>✅ Chart Configuration Benefits:</h3>
+        <ul>
+            <li><strong>No Resets:</strong> Chart maintains data across 8-hour CSV rotations</li>
+            <li><strong>Historical Context:</strong> Moving averages calculated with full historical data</li>
+            <li><strong>Continuous Updates:</strong> New data appends without losing previous periods</li>
+            <li><strong>Proper MAs:</strong> 200-period MA is meaningful with sufficient historical data</li>
+        </ul>
+    </div>
+
+    <div id="status" class="status"></div>
+
+    <div class="chart-container">
+        <canvas id="btcChart"></canvas>
+    </div>
+
+    <div class="info">
+        <h3>📊 Chart Features:</h3>
+        <ul>
+            <li><strong>Blue Line:</strong> BTC Price (1-minute intervals)</li>
+            <li><strong>Green Line:</strong> 50-period MA of Spread %</li>
+            <li><strong>Orange Line:</strong> 100-period MA of Spread %</li>
+            <li><strong>Red Line:</strong> 200-period MA of Spread %</li>
+            <li><strong>Auto-Update:</strong> Refreshes every 60 seconds</li>
+        </ul>
+    </div>
+
+    <script>
+        // Chart configuration for continuous historical data
+        let chart;
+        let updateInterval;
+
+        // API endpoints - UPDATE THESE TO YOUR SERVER
+        const API_BASE = 'http://localhost:10000'; // Change to your server URL
+        const HISTORICAL_ENDPOINT = `${API_BASE}/historical.json`;
+        const METADATA_ENDPOINT = `${API_BASE}/metadata.json`;
+
+        function updateStatus(message, isError = false) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${isError ? 'error' : 'success'}`;
+        }
+
+        function formatDate(dateString) {
+            return new Date(dateString).toLocaleString();
+        }
+
+        async function fetchHistoricalData() {
+            try {
+                updateStatus('📡 Fetching historical data...');
+                
+                const response = await fetch(HISTORICAL_ENDPOINT);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                console.log(`✅ Loaded ${data.length} historical data points`);
+                
+                // Fetch metadata for additional info
+                try {
+                    const metaResponse = await fetch(METADATA_ENDPOINT);
+                    if (metaResponse.ok) {
+                        const metadata = await metaResponse.json();
+                        updateStatus(`✅ Loaded ${data.length} records (${formatDate(metadata.date_range.start)} to ${formatDate(metadata.date_range.end)})`);
+                    }
+                } catch (e) {
+                    updateStatus(`✅ Loaded ${data.length} historical records`);
+                }
+                
+                return data;
+                
+            } catch (error) {
+                console.error('❌ Error fetching data:', error);
+                updateStatus(`❌ Error: ${error.message}`, true);
+                return null;
+            }
+        }
+
+        function prepareChartData(historicalData) {
+            if (!historicalData || historicalData.length === 0) {
+                return null;
+            }
+
+            // Sort by time to ensure proper order
+            historicalData.sort((a, b) => new Date(a.time) - new Date(b.time));
+
+            const labels = historicalData.map(item => new Date(item.time));
+            
+            return {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'BTC Price ($)',
+                        data: historicalData.map(item => item.price),
+                        borderColor: 'rgb(54, 162, 235)',
+                        backgroundColor: 'rgba(54, 162, 235, 0.1)',
+                        fill: false,
+                        tension: 0.1,
+                        yAxisID: 'y'
+                    },
+                    {
+                        label: 'MA 50 (Spread %)',
+                        data: historicalData.map(item => item.ma_50),
+                        borderColor: 'rgb(75, 192, 192)',
+                        backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                        fill: false,
+                        tension: 0.1,
+                        yAxisID: 'y1'
+                    },
+                    {
+                        label: 'MA 100 (Spread %)',
+                        data: historicalData.map(item => item.ma_100),
+                        borderColor: 'rgb(255, 159, 64)',
+                        backgroundColor: 'rgba(255, 159, 64, 0.1)',
+                        fill: false,
+                        tension: 0.1,
+                        yAxisID: 'y1'
+                    },
+                    {
+                        label: 'MA 200 (Spread %)',
+                        data: historicalData.map(item => item.ma_200),
+                        borderColor: 'rgb(255, 99, 132)',
+                        backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                        fill: false,
+                        tension: 0.1,
+                        yAxisID: 'y1'
+                    }
+                ]
+            };
+        }
+
+        function createChart(chartData) {
+            const ctx = document.getElementById('btcChart').getContext('2d');
+            
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: chartData,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'BTC-USD Price & Spread Moving Averages (Continuous Historical Data)'
+                        },
+                        legend: {
+                            display: true
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                unit: 'hour',
+                                displayFormats: {
+                                    hour: 'MMM dd HH:mm'
+                                }
+                            },
+                            title: {
+                                display: true,
+                                text: 'Time'
+                            }
+                        },
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: {
+                                display: true,
+                                text: 'BTC Price ($)'
+                            }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: {
+                                display: true,
+                                text: 'Spread % (Moving Averages)'
+                            },
+                            grid: {
+                                drawOnChartArea: false,
+                            },
+                        }
+                    },
+                    elements: {
+                        point: {
+                            radius: 0, // Hide points for cleaner look with many data points
+                            hoverRadius: 5
+                        }
+                    }
+                }
+            });
+        }
+
+        async function updateChart() {
+            const data = await fetchHistoricalData();
+            if (!data) return;
+
+            const chartData = prepareChartData(data);
+            if (!chartData) return;
+
+            if (chart) {
+                // Update existing chart data
+                chart.data = chartData;
+                chart.update('none'); // No animation for smooth updates
+            } else {
+                // Create chart for first time
+                createChart(chartData);
+            }
+        }
+
+        // Initialize chart on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            updateChart();
+            
+            // Set up auto-refresh every 60 seconds
+            updateInterval = setInterval(updateChart, 60000);
+        });
+
+        // Clean up interval when page is unloaded
+        window.addEventListener('beforeunload', function() {
+            if (updateInterval) {
+                clearInterval(updateInterval);
+            }
+        });
+    </script>
+
+    <div class="info">
+        <h3>🔧 How to Use:</h3>
+        <ol>
+            <li><strong>Update API_BASE:</strong> Change <code>const API_BASE = 'http://localhost:10000';</code> to your server URL</li>
+            <li><strong>Run your logger:</strong> <code>python logger.py</code></li>
+            <li><strong>Open this HTML file</strong> in a browser</li>
+            <li><strong>Data will load automatically</strong> and update every 60 seconds</li>
+        </ol>
+        
+        <h3>📋 Alternative Chart Data Endpoints:</h3>
+        <ul>
+            <li><code>/historical.json</code> - Complete dataset (recommended)</li>
+            <li><code>/chart-data?limit=1000</code> - Last 1000 data points</li>
+            <li><code>/chart-data?start_date=2025-01-01</code> - Data from specific date</li>
+            <li><code>/chart-data?limit=500&start_date=2025-01-01</code> - Combined filters</li>
+        </ul>
+    </div>
+</body>
+</html>

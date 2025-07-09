@@ -13,7 +13,7 @@ CORS(app)
 
 last_logged = {"timestamp": None}
 
-DATA_FOLDER = "data"
+DATA_FOLDER = "render_app/data"
 os.makedirs(DATA_FOLDER, exist_ok=True)
 
 # 🔁 Rotates files every 8 hours (00, 08, 16 UTC)
@@ -80,7 +80,7 @@ def log_data():
             last_logged["timestamp"] = data["timestamp"]
             print(f"[{data['timestamp']}] ✅ Logged to {filename}")
 
-            # Run JSON generation based on today's latest CSV
+            # Run comprehensive JSON generation with full historical context
             process_csv_to_json()
 
         except Exception as e:
@@ -97,12 +97,29 @@ def home():
     return {
         "status": "✅ BTC Logger is running",
         "last_log_time": last_logged["timestamp"],
-        "endpoints": [
-            "/data.csv",
-            "/csv-list",
-            "/csv/<filename>",
-            "/json/output_<YYYY-MM-DD>.json"
-        ]
+        "description": "Continuous BTC-USD data logging with historical charting support",
+        "endpoints": {
+            "csv_data": [
+                "/data.csv - Current CSV file",
+                "/csv-list - List all CSV files",
+                "/csv/<filename> - Download specific CSV"
+            ],
+            "json_data": [
+                "/json/output_<YYYY-MM-DD>.json - Daily JSON data",
+                "/output-latest.json - Latest daily JSON"
+            ],
+            "historical_data": [
+                "/historical.json - Complete historical dataset (for charts)",
+                "/metadata.json - Dataset metadata",
+                "/index.json - File index",
+                "/chart-data?limit=1000&start_date=2025-01-01 - Filtered chart data"
+            ]
+        },
+        "chart_integration": {
+            "recommended_endpoint": "/historical.json",
+            "description": "Use /historical.json for continuous charting without resets",
+            "features": ["Full historical context", "Proper MA calculations", "No data gaps"]
+        }
     }
 
 @app.route("/data.csv")
@@ -145,6 +162,74 @@ def serve_latest_output():
         return send_file(file_path, mimetype='application/json')
     else:
         return "Latest JSON not available", 404
+
+@app.route("/historical.json")
+def serve_historical_data():
+    """Serve complete historical dataset for continuous charting"""
+    file_path = os.path.join(DATA_FOLDER, "historical.json")
+    if os.path.exists(file_path):
+        return send_file(file_path, mimetype='application/json')
+    else:
+        return jsonify({"error": "Historical data not available"}), 404
+
+@app.route("/metadata.json")
+def serve_metadata():
+    """Serve metadata about the dataset"""
+    file_path = os.path.join(DATA_FOLDER, "metadata.json")
+    if os.path.exists(file_path):
+        return send_file(file_path, mimetype='application/json')
+    else:
+        return jsonify({"error": "Metadata not available"}), 404
+
+@app.route("/index.json")
+def serve_index():
+    """Serve index of available data files"""
+    file_path = os.path.join(DATA_FOLDER, "index.json")
+    if os.path.exists(file_path):
+        return send_file(file_path, mimetype='application/json')
+    else:
+        return jsonify({"error": "Index not available"}), 404
+
+@app.route("/chart-data")
+def serve_chart_data():
+    """Serve optimized data for charting with query parameters"""
+    from flask import request
+    
+    # Check if historical data exists
+    historical_path = os.path.join(DATA_FOLDER, "historical.json")
+    if not os.path.exists(historical_path):
+        return jsonify({"error": "Historical data not available"}), 404
+    
+    # Get query parameters
+    limit = request.args.get('limit', type=int)  # Limit number of records
+    start_date = request.args.get('start_date')  # Start date filter
+    end_date = request.args.get('end_date')      # End date filter
+    
+    try:
+        import pandas as pd
+        df = pd.read_json(historical_path)
+        
+        # Apply date filters if provided
+        if start_date:
+            df = df[df['time'] >= start_date]
+        if end_date:
+            df = df[df['time'] <= end_date]
+        
+        # Apply limit if provided
+        if limit:
+            df = df.tail(limit)
+        
+        # Convert back to JSON
+        result = df.to_dict('records')
+        
+        return jsonify({
+            "data": result,
+            "count": len(result),
+            "filtered": bool(start_date or end_date or limit)
+        })
+        
+    except Exception as e:
+        return jsonify({"error": f"Error processing chart data: {str(e)}"}), 500
 
 # ---- App Runner ----
 
