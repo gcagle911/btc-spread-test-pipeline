@@ -91,7 +91,9 @@
 
     <script>
         // Configuration - UPDATE THIS TO YOUR SERVER
-        const API_BASE = 'https://btc-spread-test-pipeline.onrender.com';
+        let API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+            ? 'http://localhost:10000' 
+            : 'https://btc-spread-test-pipeline.onrender.com';
         
         let chart;
         let autoRefreshInterval;
