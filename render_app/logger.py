@@ -97,7 +97,7 @@ def home():
     return {
         "status": "✅ BTC Logger is running",
         "last_log_time": last_logged["timestamp"],
-        "description": "Continuous BTC-USD data logging with historical charting support",
+        "description": "TradingView-style BTC-USD data with hybrid loading system",
         "endpoints": {
             "csv_data": [
                 "/data.csv - Current CSV file",
@@ -108,17 +108,28 @@ def home():
                 "/json/output_<YYYY-MM-DD>.json - Daily JSON data",
                 "/output-latest.json - Latest daily JSON"
             ],
-            "historical_data": [
-                "/historical.json - Complete historical dataset (for charts)",
+            "hybrid_chart_data": [
+                "/recent.json - Last 24 hours (fast loading, updated every second)",
+                "/historical.json - Complete dataset (full history, updated hourly)",
                 "/metadata.json - Dataset metadata",
-                "/index.json - File index",
-                "/chart-data?limit=1000&start_date=2025-01-01 - Filtered chart data"
+                "/index.json - Data source index"
+            ],
+            "filtered_data": [
+                "/chart-data?limit=1000 - Limited data points",
+                "/chart-data?start_date=2025-01-01 - Date filtered data"
             ]
         },
         "chart_integration": {
-            "recommended_endpoint": "/historical.json",
-            "description": "Use /historical.json for continuous charting without resets",
-            "features": ["Full historical context", "Proper MA calculations", "No data gaps"]
+            "recommended_approach": "Hybrid loading for TradingView-style performance",
+            "fast_startup": "Load /recent.json first (instant chart display)",
+            "full_historical": "Load /historical.json for complete data",
+            "benefits": [
+                "Fast initial chart load (24h recent data)",
+                "Full historical data available",
+                "No chart resets",
+                "Scalable performance",
+                "Professional trading platform experience"
+            ]
         }
     }
 
@@ -163,9 +174,18 @@ def serve_latest_output():
     else:
         return "Latest JSON not available", 404
 
+@app.route("/recent.json")
+def serve_recent_data():
+    """Serve last 24 hours of data for fast chart startup"""
+    file_path = os.path.join(DATA_FOLDER, "recent.json")
+    if os.path.exists(file_path):
+        return send_file(file_path, mimetype='application/json')
+    else:
+        return jsonify({"error": "Recent data not available"}), 404
+
 @app.route("/historical.json")
 def serve_historical_data():
-    """Serve complete historical dataset for continuous charting"""
+    """Serve complete historical dataset for full TradingView-style charts"""
     file_path = os.path.join(DATA_FOLDER, "historical.json")
     if os.path.exists(file_path):
         return send_file(file_path, mimetype='application/json')
