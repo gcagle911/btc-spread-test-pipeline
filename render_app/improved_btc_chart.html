@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Improved BTC Chart - Real-time Trading View</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <style>
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            margin: 0; 
+            padding: 20px;
+            background: linear-gradient(135deg, #1e1e1e 0%, #2a2a2a 100%);
+            color: #ffffff;
+            min-height: 100vh;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .title {
+            font-size: 2.5rem;
+            font-weight: bold;
+            background: linear-gradient(45deg, #f7931a, #ffa500);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            color: #888;
+            font-size: 1.1rem;
+        }
+        
+        .chart-container { 
+            width: 100%; 
+            height: 650px; 
+            margin: 20px 0; 
+            background: #2a2a2a;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        
+        .controls {
+            background: linear-gradient(135deg, #333 0%, #444 100%);
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+        }
+        
+        .status { 
+            padding: 15px; 
+            border-radius: 8px; 
+            margin: 15px 0; 
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            border-left: 4px solid;
+        }
+        
+        .loading { 
+            background: rgba(255, 193, 7, 0.1); 
+            color: #ffc107; 
+            border-color: #ffc107;
+        }
+        .success { 
+            background: rgba(40, 167, 69, 0.1); 
+            color: #28a745; 
+            border-color: #28a745;
+        }
+        .error { 
+            background: rgba(220, 53, 69, 0.1); 
+            color: #dc3545; 
+            border-color: #dc3545;
+        }
+        .info { 
+            background: rgba(23, 162, 184, 0.1); 
+            color: #17a2b8; 
+            border-color: #17a2b8;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(0, 123, 255, 0.3);
+        }
+        
+        button:hover { 
+            transform: translateY(-2px);
+            box-shadow: 0 4px 16px rgba(0, 123, 255, 0.4);
+        }
+        
+        button:disabled { 
+            background: #6c757d; 
+            cursor: not-allowed; 
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .active-button {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+        }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        
+        .metric-card {
+            background: #333;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        }
+        
+        .metric-value {
+            font-size: 1.8rem;
+            font-weight: bold;
+            color: #f7931a;
+        }
+        
+        .metric-label {
+            color: #888;
+            font-size: 0.9rem;
+            margin-top: 5px;
+        }
+        
+        .connection-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .connected { background: #28a745; }
+        .disconnected { background: #dc3545; }
+        .connecting { background: #ffc107; animation: pulse 1s infinite; }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .api-selector {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        select {
+            background: #444;
+            color: white;
+            border: 1px solid #666;
+            padding: 8px 12px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1 class="title">🚀 BTC Real-Time Chart</h1>
+        <p class="subtitle">Professional Trading View with Hybrid Data Loading</p>
+    </div>
+
+    <div class="controls">
+        <div class="api-selector">
+            <label>API Endpoint:</label>
+            <select id="apiSelect">
+                <option value="http://localhost:10000">Local Server (localhost:10000)</option>
+                <option value="https://btc-spread-test-pipeline.onrender.com">Render Deployment</option>
+                <option value="custom">Custom URL...</option>
+            </select>
+            <input type="text" id="customApi" placeholder="Enter custom API URL" style="display: none; background: #444; color: white; border: 1px solid #666; padding: 8px; border-radius: 4px;">
+        </div>
+        
+        <button id="loadRecentBtn">⚡ Recent (24h)</button>
+        <button id="loadFullBtn">📚 Full History</button>
+        <button id="loadHybridBtn" class="active-button">🔄 Hybrid Load</button>
+        <button id="autoRefreshBtn">🔃 Auto-Refresh</button>
+        <button id="testConnectionBtn">🔌 Test Connection</button>
+    </div>
+
+    <div id="status" class="status info">
+        <span class="connection-indicator disconnected"></span>
+        Ready to connect...
+    </div>
+
+    <div class="metrics-grid">
+        <div class="metric-card">
+            <div class="metric-value" id="dataPoints">-</div>
+            <div class="metric-label">Data Points</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-value" id="lastPrice">-</div>
+            <div class="metric-label">Last Price (USD)</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-value" id="loadTime">-</div>
+            <div class="metric-label">Load Time (ms)</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-value" id="updateFreq">-</div>
+            <div class="metric-label">Updates/min</div>
+        </div>
+    </div>
+
+    <div class="chart-container">
+        <canvas id="btcChart"></canvas>
+    </div>
+
+    <script>
+        class BTCChartManager {
+            constructor() {
+                this.chart = null;
+                this.autoRefreshInterval = null;
+                this.isAutoRefresh = false;
+                this.apiBase = 'http://localhost:10000';
+                this.updateCount = 0;
+                this.lastUpdateTime = Date.now();
+                
+                this.initializeEventListeners();
+                this.updateConnectionStatus('disconnected');
+            }
+
+            initializeEventListeners() {
+                document.getElementById('apiSelect').addEventListener('change', (e) => {
+                    if (e.target.value === 'custom') {
+                        document.getElementById('customApi').style.display = 'block';
+                        document.getElementById('customApi').addEventListener('blur', (e) => {
+                            if (e.target.value.trim()) {
+                                this.apiBase = e.target.value.trim();
+                                this.updateStatus('API updated to: ' + this.apiBase, 'info');
+                            }
+                        });
+                    } else {
+                        document.getElementById('customApi').style.display = 'none';
+                        this.apiBase = e.target.value;
+                        this.updateStatus('API updated to: ' + this.apiBase, 'info');
+                    }
+                });
+
+                document.getElementById('loadRecentBtn').addEventListener('click', () => this.loadRecent());
+                document.getElementById('loadFullBtn').addEventListener('click', () => this.loadFull());
+                document.getElementById('loadHybridBtn').addEventListener('click', () => this.loadHybrid());
+                document.getElementById('autoRefreshBtn').addEventListener('click', () => this.toggleAutoRefresh());
+                document.getElementById('testConnectionBtn').addEventListener('click', () => this.testConnection());
+            }
+
+            updateStatus(message, type = 'info') {
+                const statusDiv = document.getElementById('status');
+                const timestamp = new Date().toLocaleTimeString();
+                statusDiv.innerHTML = `
+                    <span class="connection-indicator ${type === 'error' ? 'disconnected' : type === 'loading' ? 'connecting' : 'connected'}"></span>
+                    [${timestamp}] ${message}
+                `;
+                statusDiv.className = `status ${type}`;
+            }
+
+            updateConnectionStatus(status) {
+                const indicator = document.querySelector('.connection-indicator');
+                indicator.className = `connection-indicator ${status}`;
+            }
+
+            updateMetrics(data, loadTime) {
+                document.getElementById('dataPoints').textContent = data ? data.length.toLocaleString() : '-';
+                document.getElementById('loadTime').textContent = loadTime ? loadTime + 'ms' : '-';
+                
+                if (data && data.length > 0) {
+                    const lastPoint = data[data.length - 1];
+                    document.getElementById('lastPrice').textContent = lastPoint.price ? 
+                        '$' + lastPoint.price.toLocaleString(undefined, {minimumFractionDigits: 2}) : '-';
+                }
+
+                // Update frequency calculation
+                this.updateCount++;
+                const now = Date.now();
+                const timeDiff = (now - this.lastUpdateTime) / 1000 / 60; // minutes
+                if (timeDiff > 0) {
+                    const frequency = Math.round(this.updateCount / timeDiff);
+                    document.getElementById('updateFreq').textContent = frequency;
+                }
+            }
+
+            async fetchData(endpoint, description) {
+                const startTime = performance.now();
+                this.updateStatus(`Loading ${description}...`, 'loading');
+                this.updateConnectionStatus('connecting');
+                
+                try {
+                    const response = await fetch(`${this.apiBase}${endpoint}`, {
+                        headers: {
+                            'Accept': 'application/json',
+                        },
+                        mode: 'cors'
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    
+                    const data = await response.json();
+                    const loadTime = Math.round(performance.now() - startTime);
+                    
+                    this.updateStatus(`✅ Loaded ${data.length} ${description} records in ${loadTime}ms`, 'success');
+                    this.updateConnectionStatus('connected');
+                    this.updateMetrics(data, loadTime);
+                    
+                    return { data, loadTime };
+                    
+                } catch (error) {
+                    const loadTime = Math.round(performance.now() - startTime);
+                    this.updateStatus(`❌ Error loading ${description}: ${error.message}`, 'error');
+                    this.updateConnectionStatus('disconnected');
+                    console.error(`Error fetching ${endpoint}:`, error);
+                    return null;
+                }
+            }
+
+            async testConnection() {
+                this.updateStatus('Testing connection...', 'loading');
+                try {
+                    const response = await fetch(`${this.apiBase}/`, {
+                        method: 'GET',
+                        headers: { 'Accept': 'application/json' },
+                        mode: 'cors'
+                    });
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        this.updateStatus(`✅ Connection successful! Server status: ${data.status}`, 'success');
+                        this.updateConnectionStatus('connected');
+                    } else {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                } catch (error) {
+                    this.updateStatus(`❌ Connection failed: ${error.message}`, 'error');
+                    this.updateConnectionStatus('disconnected');
+                }
+            }
+
+            createChart(data, title) {
+                const ctx = document.getElementById('btcChart').getContext('2d');
+                
+                if (this.chart) {
+                    this.chart.destroy();
+                }
+
+                // Handle empty or invalid data
+                if (!data || data.length === 0) {
+                    this.updateStatus('No data available to chart', 'error');
+                    return;
+                }
+
+                // Sort data by time
+                data.sort((a, b) => new Date(a.time) - new Date(b.time));
+                
+                this.chart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        datasets: [
+                            {
+                                label: 'BTC Price ($)',
+                                data: data.map(item => ({
+                                    x: new Date(item.time),
+                                    y: item.price
+                                })),
+                                borderColor: '#f7931a',
+                                backgroundColor: 'rgba(247, 147, 26, 0.1)',
+                                fill: false,
+                                tension: 0.1,
+                                yAxisID: 'y',
+                                pointRadius: data.length > 1000 ? 0 : 1,
+                                pointHoverRadius: 4,
+                                borderWidth: 2
+                            },
+                            {
+                                label: 'MA 50 (Spread %)',
+                                data: data.map(item => ({
+                                    x: new Date(item.time),
+                                    y: item.ma_50
+                                })),
+                                borderColor: '#28a745',
+                                backgroundColor: 'rgba(40, 167, 69, 0.1)',
+                                fill: false,
+                                tension: 0.1,
+                                yAxisID: 'y1',
+                                pointRadius: 0,
+                                pointHoverRadius: 3,
+                                borderWidth: 1.5
+                            },
+                            {
+                                label: 'MA 100 (Spread %)',
+                                data: data.map(item => ({
+                                    x: new Date(item.time),
+                                    y: item.ma_100
+                                })),
+                                borderColor: '#ffc107',
+                                backgroundColor: 'rgba(255, 193, 7, 0.1)',
+                                fill: false,
+                                tension: 0.1,
+                                yAxisID: 'y1',
+                                pointRadius: 0,
+                                pointHoverRadius: 3,
+                                borderWidth: 1.5
+                            },
+                            {
+                                label: 'MA 200 (Spread %)',
+                                data: data.map(item => ({
+                                    x: new Date(item.time),
+                                    y: item.ma_200
+                                })),
+                                borderColor: '#dc3545',
+                                backgroundColor: 'rgba(220, 53, 69, 0.1)',
+                                fill: false,
+                                tension: 0.1,
+                                yAxisID: 'y1',
+                                pointRadius: 0,
+                                pointHoverRadius: 3,
+                                borderWidth: 1.5
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: {
+                            duration: data.length > 1000 ? 0 : 750
+                        },
+                        interaction: {
+                            mode: 'index',
+                            intersect: false,
+                        },
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: `${title} - ${data.length.toLocaleString()} data points`,
+                                color: '#ffffff',
+                                font: { size: 16, weight: 'bold' }
+                            },
+                            legend: {
+                                display: true,
+                                labels: {
+                                    color: '#ffffff',
+                                    usePointStyle: true,
+                                    padding: 20
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                type: 'time',
+                                time: {
+                                    unit: 'hour',
+                                    displayFormats: {
+                                        hour: 'MMM dd HH:mm'
+                                    }
+                                },
+                                title: {
+                                    display: true,
+                                    text: 'Time',
+                                    color: '#ffffff'
+                                },
+                                ticks: {
+                                    color: '#ffffff',
+                                    maxTicksLimit: 10
+                                },
+                                grid: {
+                                    color: 'rgba(255, 255, 255, 0.1)'
+                                }
+                            },
+                            y: {
+                                type: 'linear',
+                                display: true,
+                                position: 'left',
+                                title: {
+                                    display: true,
+                                    text: 'BTC Price ($)',
+                                    color: '#ffffff'
+                                },
+                                ticks: {
+                                    color: '#ffffff'
+                                },
+                                grid: {
+                                    color: 'rgba(255, 255, 255, 0.1)'
+                                }
+                            },
+                            y1: {
+                                type: 'linear',
+                                display: true,
+                                position: 'right',
+                                title: {
+                                    display: true,
+                                    text: 'Spread % (Moving Averages)',
+                                    color: '#ffffff'
+                                },
+                                grid: {
+                                    drawOnChartArea: false,
+                                },
+                                ticks: {
+                                    color: '#ffffff'
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
+            async loadRecent() {
+                const result = await this.fetchData('/recent.json', 'recent data (24h)');
+                if (result) {
+                    this.createChart(result.data, 'Recent Data (24 Hours)');
+                }
+            }
+
+            async loadFull() {
+                const result = await this.fetchData('/historical.json', 'full historical data');
+                if (result) {
+                    this.createChart(result.data, 'Complete Historical Data');
+                }
+            }
+
+            async loadHybrid() {
+                this.updateStatus('🔄 Starting hybrid load (TradingView-style)...', 'loading');
+                
+                // Phase 1: Load recent data first (instant chart)
+                const recentResult = await this.fetchData('/recent.json', 'recent data');
+                if (recentResult) {
+                    this.createChart(recentResult.data, 'Recent Data (Loading Historical...)');
+                }
+                
+                // Phase 2: Load historical data in background
+                const historicalResult = await this.fetchData('/historical.json', 'historical data');
+                if (historicalResult) {
+                    this.createChart(historicalResult.data, 'Complete Historical Data (Hybrid Loaded)');
+                    this.updateStatus('🎉 Hybrid load complete! Full historical data displayed.', 'success');
+                }
+            }
+
+            toggleAutoRefresh() {
+                const btn = document.getElementById('autoRefreshBtn');
+                
+                if (this.isAutoRefresh) {
+                    clearInterval(this.autoRefreshInterval);
+                    this.isAutoRefresh = false;
+                    btn.textContent = '🔃 Auto-Refresh';
+                    btn.classList.remove('active-button');
+                    this.updateStatus('Auto-refresh stopped', 'info');
+                } else {
+                    this.autoRefreshInterval = setInterval(() => this.loadRecent(), 30000);
+                    this.isAutoRefresh = true;
+                    btn.textContent = '⏸️ Stop Auto-Refresh';
+                    btn.classList.add('active-button');
+                    this.updateStatus('Auto-refresh started (30s intervals)', 'info');
+                }
+            }
+        }
+
+        // Initialize the chart manager
+        const chartManager = new BTCChartManager();
+
+        // Auto-start with connection test and hybrid load
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(async () => {
+                await chartManager.testConnection();
+                setTimeout(() => chartManager.loadHybrid(), 1000);
+            }, 500);
+        });
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', function() {
+            if (chartManager.autoRefreshInterval) {
+                clearInterval(chartManager.autoRefreshInterval);
+            }
+        });
+    </script>
+</body>
+</html>
