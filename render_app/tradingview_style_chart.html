@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TradingView-Style BTC Chart</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 0; 
+            padding: 20px;
+            background: #1e1e1e;
+            color: #ffffff;
+        }
+        .chart-container { 
+            width: 100%; 
+            height: 600px; 
+            margin: 20px 0; 
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        .controls {
+            background: #333;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .status { 
+            padding: 10px; 
+            border-radius: 5px; 
+            margin: 10px 0; 
+            font-family: monospace;
+        }
+        .loading { background: #ffc107; color: #000; }
+        .success { background: #28a745; color: #fff; }
+        .error { background: #dc3545; color: #fff; }
+        .info { background: #17a2b8; color: #fff; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #6c757d; cursor: not-allowed; }
+        .performance-info {
+            background: #444;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🚀 TradingView-Style BTC Chart - Hybrid Loading</h1>
+
+    <div class="controls">
+        <button id="loadRecentBtn">⚡ Load Recent (Fast)</button>
+        <button id="loadFullBtn">📚 Load Full History</button>
+        <button id="loadHybridBtn">🔄 Hybrid Load (Recommended)</button>
+        <button id="autoRefreshBtn">🔃 Toggle Auto-Refresh</button>
+    </div>
+
+    <div id="status" class="status info">Ready to load data...</div>
+    
+    <div class="performance-info">
+        <strong>Loading Strategy:</strong>
+        <ul>
+            <li><strong>Recent:</strong> ~1440 data points (24 hours) - Instant loading</li>
+            <li><strong>Full History:</strong> All historical data - Complete dataset</li>
+            <li><strong>Hybrid:</strong> Load recent first, then historical - Best experience</li>
+        </ul>
+    </div>
+
+    <div class="chart-container">
+        <canvas id="btcChart"></canvas>
+    </div>
+
+    <div class="performance-info" id="performanceInfo">
+        Performance metrics will appear here...
+    </div>
+
+    <script>
+        // Configuration - UPDATE THIS TO YOUR SERVER
+        const API_BASE = 'https://btc-spread-test-pipeline.onrender.com';
+        
+        let chart;
+        let autoRefreshInterval;
+        let isAutoRefresh = false;
+
+        // Performance tracking
+        let performanceMetrics = {
+            recentLoadTime: 0,
+            historicalLoadTime: 0,
+            totalDataPoints: 0,
+            lastUpdate: null
+        };
+
+        function updateStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            statusDiv.className = `status ${type}`;
+        }
+
+        function updatePerformanceInfo() {
+            const info = document.getElementById('performanceInfo');
+            info.innerHTML = `
+                <strong>Performance Metrics:</strong><br>
+                📊 Total Data Points: ${performanceMetrics.totalDataPoints.toLocaleString()}<br>
+                ⚡ Recent Load Time: ${performanceMetrics.recentLoadTime}ms<br>
+                📚 Historical Load Time: ${performanceMetrics.historicalLoadTime}ms<br>
+                🕒 Last Update: ${performanceMetrics.lastUpdate || 'Never'}
+            `;
+        }
+
+        async function fetchData(endpoint, description) {
+            const startTime = performance.now();
+            updateStatus(`Loading ${description}...`, 'loading');
+            
+            try {
+                const response = await fetch(`${API_BASE}${endpoint}`);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                const loadTime = Math.round(performance.now() - startTime);
+                
+                updateStatus(`✅ Loaded ${data.length} ${description} records in ${loadTime}ms`, 'success');
+                
+                // Update performance metrics
+                if (endpoint.includes('recent')) {
+                    performanceMetrics.recentLoadTime = loadTime;
+                } else if (endpoint.includes('historical')) {
+                    performanceMetrics.historicalLoadTime = loadTime;
+                }
+                
+                return { data, loadTime };
+                
+            } catch (error) {
+                const loadTime = Math.round(performance.now() - startTime);
+                updateStatus(`❌ Error loading ${description}: ${error.message}`, 'error');
+                console.error(`Error fetching ${endpoint}:`, error);
+                return null;
+            }
+        }
+
+        function createChart(data, title) {
+            const ctx = document.getElementById('btcChart').getContext('2d');
+            
+            if (chart) {
+                chart.destroy();
+            }
+
+            // Sort data by time
+            data.sort((a, b) => new Date(a.time) - new Date(b.time));
+            
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    datasets: [
+                        {
+                            label: 'BTC Price ($)',
+                            data: data.map(item => ({
+                                x: new Date(item.time),
+                                y: item.price
+                            })),
+                            borderColor: '#f7931a',
+                            backgroundColor: 'rgba(247, 147, 26, 0.1)',
+                            fill: false,
+                            tension: 0.1,
+                            yAxisID: 'y',
+                            pointRadius: 0,
+                            pointHoverRadius: 3
+                        },
+                        {
+                            label: 'MA 50 (Spread %)',
+                            data: data.map(item => ({
+                                x: new Date(item.time),
+                                y: item.ma_50
+                            })),
+                            borderColor: '#28a745',
+                            backgroundColor: 'rgba(40, 167, 69, 0.1)',
+                            fill: false,
+                            tension: 0.1,
+                            yAxisID: 'y1',
+                            pointRadius: 0,
+                            pointHoverRadius: 3
+                        },
+                        {
+                            label: 'MA 100 (Spread %)',
+                            data: data.map(item => ({
+                                x: new Date(item.time),
+                                y: item.ma_100
+                            })),
+                            borderColor: '#ffc107',
+                            backgroundColor: 'rgba(255, 193, 7, 0.1)',
+                            fill: false,
+                            tension: 0.1,
+                            yAxisID: 'y1',
+                            pointRadius: 0,
+                            pointHoverRadius: 3
+                        },
+                        {
+                            label: 'MA 200 (Spread %)',
+                            data: data.map(item => ({
+                                x: new Date(item.time),
+                                y: item.ma_200
+                            })),
+                            borderColor: '#dc3545',
+                            backgroundColor: 'rgba(220, 53, 69, 0.1)',
+                            fill: false,
+                            tension: 0.1,
+                            yAxisID: 'y1',
+                            pointRadius: 0,
+                            pointHoverRadius: 3
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: {
+                        duration: data.length > 1000 ? 0 : 750
+                    },
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: `${title} - ${data.length} data points`,
+                            color: '#ffffff'
+                        },
+                        legend: {
+                            display: true,
+                            labels: {
+                                color: '#ffffff'
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                unit: 'hour',
+                                displayFormats: {
+                                    hour: 'MMM dd HH:mm'
+                                }
+                            },
+                            title: {
+                                display: true,
+                                text: 'Time',
+                                color: '#ffffff'
+                            },
+                            ticks: {
+                                color: '#ffffff'
+                            },
+                            grid: {
+                                color: '#444'
+                            }
+                        },
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: {
+                                display: true,
+                                text: 'BTC Price ($)',
+                                color: '#ffffff'
+                            },
+                            ticks: {
+                                color: '#ffffff'
+                            },
+                            grid: {
+                                color: '#444'
+                            }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: {
+                                display: true,
+                                text: 'Spread % (Moving Averages)',
+                                color: '#ffffff'
+                            },
+                            grid: {
+                                drawOnChartArea: false,
+                            },
+                            ticks: {
+                                color: '#ffffff'
+                            }
+                        }
+                    }
+                }
+            });
+
+            performanceMetrics.totalDataPoints = data.length;
+            performanceMetrics.lastUpdate = new Date().toLocaleTimeString();
+            updatePerformanceInfo();
+        }
+
+        async function loadRecent() {
+            const result = await fetchData('/recent.json', 'recent data (24h)');
+            if (result) {
+                createChart(result.data, 'Recent Data (24 Hours)');
+            }
+        }
+
+        async function loadFull() {
+            const result = await fetchData('/historical.json', 'full historical data');
+            if (result) {
+                createChart(result.data, 'Complete Historical Data');
+            }
+        }
+
+        async function loadHybrid() {
+            updateStatus('🔄 Starting hybrid load (TradingView-style)...', 'loading');
+            
+            // Phase 1: Load recent data first (instant chart)
+            const recentResult = await fetchData('/recent.json', 'recent data');
+            if (recentResult) {
+                createChart(recentResult.data, 'Recent Data (Loading Historical...)');
+            }
+            
+            // Phase 2: Load historical data in background
+            const historicalResult = await fetchData('/historical.json', 'historical data');
+            if (historicalResult) {
+                createChart(historicalResult.data, 'Complete Historical Data (Hybrid Loaded)');
+                updateStatus('🎉 Hybrid load complete! Full historical data displayed.', 'success');
+            }
+        }
+
+        function toggleAutoRefresh() {
+            const btn = document.getElementById('autoRefreshBtn');
+            
+            if (isAutoRefresh) {
+                clearInterval(autoRefreshInterval);
+                isAutoRefresh = false;
+                btn.textContent = '🔃 Start Auto-Refresh';
+                updateStatus('Auto-refresh stopped', 'info');
+            } else {
+                autoRefreshInterval = setInterval(loadRecent, 30000); // Every 30 seconds
+                isAutoRefresh = true;
+                btn.textContent = '⏸️ Stop Auto-Refresh';
+                updateStatus('Auto-refresh started (30s intervals)', 'info');
+            }
+        }
+
+        // Event listeners
+        document.getElementById('loadRecentBtn').addEventListener('click', loadRecent);
+        document.getElementById('loadFullBtn').addEventListener('click', loadFull);
+        document.getElementById('loadHybridBtn').addEventListener('click', loadHybrid);
+        document.getElementById('autoRefreshBtn').addEventListener('click', toggleAutoRefresh);
+
+        // Initialize with hybrid load (best experience)
+        document.addEventListener('DOMContentLoaded', function() {
+            updateStatus('🚀 Initializing TradingView-style chart...', 'info');
+            setTimeout(loadHybrid, 1000); // Small delay for visual effect
+        });
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', function() {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+            }
+        });
+    </script>
+
+    <div class="performance-info">
+        <h3>🎯 About This Implementation:</h3>
+        <ul>
+            <li><strong>Hybrid Loading:</strong> Loads recent data instantly, then historical data</li>
+            <li><strong>Performance Optimized:</strong> No chart resets, efficient data loading</li>
+            <li><strong>Scalable:</strong> Works with any amount of historical data</li>
+            <li><strong>TradingView-Style:</strong> Professional trading platform experience</li>
+            <li><strong>Auto-Refresh:</strong> Optional real-time updates</li>
+        </ul>
+        
+        <h3>🔧 Chart Integration Code:</h3>
+        <pre style="background: #222; padding: 10px; border-radius: 5px; overflow-x: auto;">
+// TradingView-style hybrid loading
+async function loadChartData() {
+    // Phase 1: Fast startup with recent data
+    const recent = await fetch('/recent.json');
+    const recentData = await recent.json();
+    updateChart(recentData); // Instant chart display
+    
+    // Phase 2: Load full historical data in background
+    const historical = await fetch('/historical.json');
+    const fullData = await historical.json();
+    updateChart(fullData); // Complete dataset
+}
+        </pre>
+    </div>
+</body>
+</html>

@@ -70,8 +70,75 @@ def resample_and_calculate_mas(df):
     
     return df_1min
 
+def save_recent_data(df_full):
+    """Save last 24 hours of data for fast chart loading"""
+    if df_full is None or df_full.empty:
+        return
+    
+    # Get last 24 hours
+    now = datetime.utcnow()
+    cutoff = now - timedelta(hours=24)
+    
+    df_full['time_dt'] = pd.to_datetime(df_full['time'])
+    recent_data = df_full[df_full['time_dt'] >= cutoff].copy()
+    recent_data = recent_data.drop(columns=['time_dt'])
+    
+    # Save recent data (fast loading for charts)
+    recent_path = os.path.join(DATA_FOLDER, "recent.json")
+    recent_data.to_json(recent_path, orient="records", date_format="iso")
+    
+    print(f"⚡ Saved recent.json: {len(recent_data)} records (last 24h)")
+    return len(recent_data)
+
+def should_update_historical():
+    """Check if historical.json needs updating (every hour)"""
+    historical_path = os.path.join(DATA_FOLDER, "historical.json")
+    
+    if not os.path.exists(historical_path):
+        return True  # Create if doesn't exist
+    
+    # Check if file is older than 1 hour
+    file_time = datetime.fromtimestamp(os.path.getmtime(historical_path))
+    now = datetime.utcnow()
+    
+    return (now - file_time) > timedelta(hours=1)
+
+def save_historical_data(df_full):
+    """Save complete historical dataset (updated hourly)"""
+    if df_full is None or df_full.empty:
+        return
+    
+    # Save complete historical data
+    historical_path = os.path.join(DATA_FOLDER, "historical.json")
+    df_full.to_json(historical_path, orient="records", date_format="iso")
+    
+    # Create metadata
+    metadata = {
+        "generated_at": datetime.utcnow().isoformat(),
+        "total_records": len(df_full),
+        "date_range": {
+            "start": df_full["time"].min(),
+            "end": df_full["time"].max()
+        },
+        "ma_info": {
+            "ma_50_valid_count": int(df_full["ma_50_valid"].sum()),
+            "ma_100_valid_count": int(df_full["ma_100_valid"].sum()),
+            "ma_200_valid_count": int(df_full["ma_200_valid"].sum())
+        },
+        "file_size_mb": round(os.path.getsize(historical_path) / 1024 / 1024, 2),
+        "update_frequency": "hourly"
+    }
+    
+    # Save metadata
+    metadata_path = os.path.join(DATA_FOLDER, "metadata.json")
+    with open(metadata_path, "w") as f:
+        json.dump(metadata, f, indent=2, default=str)
+    
+    print(f"📚 Saved historical.json: {len(df_full)} records ({metadata['file_size_mb']}MB)")
+    return len(df_full)
+
 def save_daily_jsons(df_full):
-    """Create individual daily JSON files for each day in the dataset"""
+    """Create individual daily JSON files for compatibility"""
     if df_full is None or df_full.empty:
         return []
     
@@ -86,53 +153,32 @@ def save_daily_jsons(df_full):
         
         day_data_clean.to_json(output_path, orient="records", date_format="iso")
         daily_files.append(output_file)
-        print(f"� Saved daily: {output_file} ({len(day_data_clean)} records)")
     
     return daily_files
 
-def save_historical_json(df_full):
-    """Save complete historical dataset as one JSON file"""
-    if df_full is None or df_full.empty:
-        return None
-    
-    # Add metadata
-    metadata = {
-        "generated_at": datetime.utcnow().isoformat(),
-        "total_records": len(df_full),
-        "date_range": {
-            "start": df_full["time"].min(),
-            "end": df_full["time"].max()
-        },
-        "ma_info": {
-            "ma_50_valid_count": int(df_full["ma_50_valid"].sum()),
-            "ma_100_valid_count": int(df_full["ma_100_valid"].sum()),
-            "ma_200_valid_count": int(df_full["ma_200_valid"].sum())
-        }
-    }
-    
-    # Prepare data for JSON output
-    df_output = df_full.copy()
-    
-    # Save complete historical data
-    historical_path = os.path.join(DATA_FOLDER, "historical.json")
-    df_output.to_json(historical_path, orient="records", date_format="iso")
-    
-    # Save metadata separately
-    metadata_path = os.path.join(DATA_FOLDER, "metadata.json")
-    with open(metadata_path, "w") as f:
-        json.dump(metadata, f, indent=2, default=str)
-    
-    print(f"✅ Saved historical: historical.json ({len(df_output)} records)")
-    print(f"✅ Saved metadata: metadata.json")
-    
-    return historical_path
-
-def save_index_json(daily_files):
-    """Create index file with list of available daily files"""
+def save_index_json(daily_files, recent_count, historical_count):
+    """Create index file with information about all data sources"""
     index_data = {
-        "available_days": sorted(daily_files),
-        "historical_file": "historical.json",
-        "metadata_file": "metadata.json",
+        "data_sources": {
+            "recent": {
+                "file": "recent.json",
+                "description": "Last 24 hours (fast loading)",
+                "records": recent_count,
+                "update_frequency": "every_second"
+            },
+            "historical": {
+                "file": "historical.json", 
+                "description": "Complete dataset (full history)",
+                "records": historical_count,
+                "update_frequency": "hourly"
+            }
+        },
+        "daily_files": sorted(daily_files),
+        "recommended_usage": {
+            "fast_chart_startup": "Load /recent.json first",
+            "full_historical_view": "Load /historical.json for complete data",
+            "hybrid_approach": "Load recent first, then historical in background"
+        },
         "last_updated": datetime.utcnow().isoformat()
     }
     
@@ -140,11 +186,15 @@ def save_index_json(daily_files):
     with open(index_path, "w") as f:
         json.dump(index_data, f, indent=2)
     
-    print(f"✅ Saved index: index.json")
+    print(f"📋 Saved index.json")
 
 def process_csv_to_json():
-    """Main function: Process all data and create comprehensive JSON outputs"""
-    print("🚀 Starting comprehensive data processing...")
+    """
+    Main function: Hybrid data processing system
+    - recent.json: Updated every second (last 24h)
+    - historical.json: Updated hourly (complete dataset)
+    """
+    print("🚀 Starting hybrid data processing...")
     
     # Step 1: Load all historical data
     df_combined = load_all_historical_data()
@@ -156,19 +206,30 @@ def process_csv_to_json():
     if df_processed is None:
         return
     
-    # Step 3: Save individual daily JSON files
-    daily_files = save_daily_jsons(df_processed)
+    # Step 3: Always save recent data (fast for charts)
+    recent_count = save_recent_data(df_processed)
     
-    # Step 4: Save complete historical JSON
-    save_historical_json(df_processed)
+    # Step 4: Check if we need to update historical data
+    historical_count = len(df_processed)
+    if should_update_historical():
+        print("⏰ Updating historical data (hourly update)")
+        historical_count = save_historical_data(df_processed)
+        
+        # Also update daily files when historical updates
+        daily_files = save_daily_jsons(df_processed)
+    else:
+        print("⏸️ Skipping historical update (updated within last hour)")
+        daily_files = []
     
-    # Step 5: Create index file
-    save_index_json(daily_files)
+    # Step 5: Update index
+    save_index_json(daily_files, recent_count, historical_count)
     
-    print("✅ Processing complete!")
-    print(f"📈 Historical data spans {len(df_processed)} minutes")
-    print(f"📅 Generated {len(daily_files)} daily files")
-    print("🔄 Charts can now use 'historical.json' for continuous data")
+    print("✅ Hybrid processing complete!")
+    print(f"⚡ Recent data: {recent_count} records (updated every second)")
+    print(f"� Historical data: {historical_count} records (updated hourly)")
+    print("🔄 Charts can use:")
+    print("   - /recent.json for fast startup")
+    print("   - /historical.json for complete data")
 
 # Legacy function for compatibility
 def process_today_only():
