@@ -1,3 +1,6 @@
+# BTC Logger - Enhanced for Historical Data Support
+# Updated: 2025-07-10 - Added hybrid data endpoints and improved debugging
+
 from flask_cors import CORS
 from process_data import process_csv_to_json
 import requests
@@ -250,6 +253,53 @@ def serve_chart_data():
         
     except Exception as e:
         return jsonify({"error": f"Error processing chart data: {str(e)}"}), 500
+
+@app.route("/debug-status")
+def debug_status():
+    """Debug endpoint to check system status and file timestamps - UPDATED 2025-07-10"""
+    try:
+        import glob
+        status = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "data_folder": DATA_FOLDER,
+            "files": {}
+        }
+        
+        # Check file existence and timestamps
+        files_to_check = ["recent.json", "historical.json", "metadata.json", "index.json"]
+        
+        for filename in files_to_check:
+            file_path = os.path.join(DATA_FOLDER, filename)
+            if os.path.exists(file_path):
+                file_time = datetime.fromtimestamp(os.path.getmtime(file_path))
+                age_hours = (datetime.utcnow() - file_time).total_seconds() / 3600
+                file_size = os.path.getsize(file_path)
+                
+                status["files"][filename] = {
+                    "exists": True,
+                    "last_modified": file_time.isoformat(),
+                    "age_hours": round(age_hours, 2),
+                    "size_bytes": file_size
+                }
+            else:
+                status["files"][filename] = {"exists": False}
+        
+        # Check CSV files
+        csv_files = glob.glob(os.path.join(DATA_FOLDER, "*.csv"))
+        status["csv_files"] = []
+        for csv_file in sorted(csv_files):
+            file_time = datetime.fromtimestamp(os.path.getmtime(csv_file))
+            file_size = os.path.getsize(csv_file)
+            status["csv_files"].append({
+                "name": os.path.basename(csv_file),
+                "last_modified": file_time.isoformat(),
+                "size_bytes": file_size
+            })
+        
+        return jsonify(status)
+        
+    except Exception as e:
+        return jsonify({"error": f"Debug status error: {str(e)}"}), 500
 
 # ---- App Runner ----
 
