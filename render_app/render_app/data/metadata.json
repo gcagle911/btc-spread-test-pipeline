@@ -1,0 +1,13 @@
+{
+  "generated_at": "2025-07-09T18:51:09.744015",
+  "total_records": 1,
+  "date_range": {
+    "start": "2025-07-06 00:00:00",
+    "end": "2025-07-06 00:00:00"
+  },
+  "ma_info": {
+    "ma_50_valid_count": 0,
+    "ma_100_valid_count": 0,
+    "ma_200_valid_count": 0
+  }
+}
