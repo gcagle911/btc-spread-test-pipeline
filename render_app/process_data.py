@@ -1,3 +1,7 @@
+# BTC Data Processing - Enhanced with Historical Data Management
+# Updated: 2025-07-10 - Fixed timestamp checking and added comprehensive debugging
+# This version includes hybrid data loading (recent.json + historical.json)
+
 import pandas as pd
 import os
 import json
@@ -258,7 +262,7 @@ def process_csv_to_json():
     
     print("✅ Hybrid processing complete!")
     print(f"⚡ Recent data: {recent_count} records (updated every second)")
-    print(f"� Historical data: {historical_count} records (updated hourly)")
+    print(f" Historical data: {historical_count} records (updated hourly)")
     print("🔄 Charts can use:")
     print("   - /recent.json for fast startup")
     print("   - /historical.json for complete data")
