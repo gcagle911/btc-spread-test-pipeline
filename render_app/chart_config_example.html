@@ -50,8 +50,10 @@
         let chart;
         let updateInterval;
 
-        // API endpoints - UPDATE THESE TO YOUR SERVER
-        const API_BASE = 'http://localhost:10000'; // Change to your server URL
+        // API endpoints - Auto-detect based on environment
+        const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+            ? 'http://localhost:10000' 
+            : 'https://btc-spread-test-pipeline.onrender.com';
         const HISTORICAL_ENDPOINT = `${API_BASE}/historical.json`;
         const METADATA_ENDPOINT = `${API_BASE}/metadata.json`;
 
