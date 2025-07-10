@@ -1,3 +1,7 @@
+# BTC Data Processing - Enhanced with Historical Data Management
+# Updated: 2025-07-10 - Fixed timestamp checking and added comprehensive debugging
+# This version includes hybrid data loading (recent.json + historical.json)
+
 import pandas as pd
 import os
 import json
@@ -8,13 +12,22 @@ DATA_FOLDER = "render_app/data"
 
 def load_all_historical_data():
     """Load and combine all CSV files into a single chronological dataset"""
+    print(f"🔍 Looking for CSV files in: {DATA_FOLDER}")
     csv_files = glob.glob(os.path.join(DATA_FOLDER, "*.csv"))
     
     if not csv_files:
         print("❌ No CSV files found")
+        print(f"🔍 Checked path: {os.path.join(DATA_FOLDER, '*.csv')}")
+        print(f"🔍 Directory exists: {os.path.exists(DATA_FOLDER)}")
+        if os.path.exists(DATA_FOLDER):
+            all_files = os.listdir(DATA_FOLDER)
+            print(f"🔍 All files in directory: {all_files}")
         return None
     
-    print(f"📁 Found {len(csv_files)} CSV files")
+    print(f"📁 Found {len(csv_files)} CSV files:")
+    for csv_file in sorted(csv_files):
+        file_size = os.path.getsize(csv_file) if os.path.exists(csv_file) else 0
+        print(f"   📄 {os.path.basename(csv_file)} ({file_size} bytes)")
     
     all_dfs = []
     for csv_file in sorted(csv_files):
@@ -22,9 +35,14 @@ def load_all_historical_data():
             df = pd.read_csv(csv_file, parse_dates=["timestamp"])
             if not df.empty:
                 all_dfs.append(df)
-                print(f"📄 Loaded: {os.path.basename(csv_file)} ({len(df)} rows)")
+                # Show date range for each file
+                min_time = df['timestamp'].min()
+                max_time = df['timestamp'].max()
+                print(f"✅ Loaded: {os.path.basename(csv_file)} ({len(df)} rows, {min_time} to {max_time})")
+            else:
+                print(f"⚠️ Empty file: {os.path.basename(csv_file)}")
         except Exception as e:
-            print(f"⚠️ Error loading {csv_file}: {e}")
+            print(f"❌ Error loading {csv_file}: {e}")
     
     if not all_dfs:
         print("❌ No valid data found")
@@ -35,7 +53,10 @@ def load_all_historical_data():
     combined_df = combined_df.sort_values("timestamp")
     combined_df = combined_df.drop_duplicates(subset=["timestamp"], keep="last")
     
-    print(f"✅ Combined dataset: {len(combined_df)} total rows")
+    # Show overall date range
+    min_time = combined_df['timestamp'].min()
+    max_time = combined_df['timestamp'].max()
+    print(f"✅ Combined dataset: {len(combined_df)} total rows ({min_time} to {max_time})")
     return combined_df
 
 def resample_and_calculate_mas(df):
@@ -95,13 +116,28 @@ def should_update_historical():
     historical_path = os.path.join(DATA_FOLDER, "historical.json")
     
     if not os.path.exists(historical_path):
+        print("🔄 Historical file doesn't exist, creating...")
         return True  # Create if doesn't exist
     
     # Check if file is older than 1 hour
-    file_time = datetime.fromtimestamp(os.path.getmtime(historical_path))
-    now = datetime.utcnow()
-    
-    return (now - file_time) > timedelta(hours=1)
+    try:
+        file_time = datetime.fromtimestamp(os.path.getmtime(historical_path))
+        now = datetime.utcnow()
+        age_hours = (now - file_time).total_seconds() / 3600
+        
+        print(f"📅 Historical file age: {age_hours:.1f} hours (threshold: 1.0)")
+        
+        should_update = age_hours > 1.0
+        if should_update:
+            print("⏰ File is old enough, will update historical data")
+        else:
+            print(f"⏸️ File is recent ({age_hours:.1f}h old), skipping update")
+            
+        return should_update
+        
+    except Exception as e:
+        print(f"⚠️ Error checking file timestamp: {e}, forcing update")
+        return True  # Force update if timestamp check fails
 
 def save_historical_data(df_full):
     """Save complete historical dataset (updated hourly)"""
@@ -226,7 +262,7 @@ def process_csv_to_json():
     
     print("✅ Hybrid processing complete!")
     print(f"⚡ Recent data: {recent_count} records (updated every second)")
-    print(f"� Historical data: {historical_count} records (updated hourly)")
+    print(f" Historical data: {historical_count} records (updated hourly)")
     print("🔄 Charts can use:")
     print("   - /recent.json for fast startup")
     print("   - /historical.json for complete data")
