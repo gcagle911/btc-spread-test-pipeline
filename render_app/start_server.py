@@ -150,7 +150,8 @@ def show_endpoints():
         for url in urls:
             print(f"   • {url}")
     
-    print(f"\n🔗 Base URL: http://localhost:10000")
+    port = int(os.environ.get('PORT', 10000))
+    print(f"\n🔗 Base URL: http://localhost:{port}")
     print("📊 Chart Files:")
     print("   • improved_btc_chart.html - New enhanced chart")
     print("   • tradingview_style_chart.html - TradingView style")
@@ -183,17 +184,18 @@ def main():
     # Show available endpoints
     show_endpoints()
     
+    # Get the port that will be used
+    port = int(os.environ.get('PORT', 10000))
+    
     print("\n🎯 QUICK START:")
-    print("1. Open http://localhost:10000 in your browser to see API status")
+    print(f"1. Open http://localhost:{port} in your browser to see API status")
     print("2. Open render_app/improved_btc_chart.html to view the enhanced chart")
     print("3. The chart will auto-detect localhost and use the correct API endpoint")
     print("4. Data will update automatically every 30 seconds when auto-refresh is enabled")
     
-    print("\n🚀 Starting Flask server on http://localhost:10000...")
-    
     try:
-        # Start the Flask app
-        app.run(host="0.0.0.0", port=10000, debug=False)
+        print(f"\n🚀 Starting Flask server on http://localhost:{port}...")
+        app.run(host="0.0.0.0", port=port, debug=False)
     except KeyboardInterrupt:
         print("\n⏹️ Server stopped by user")
     except Exception as e:
