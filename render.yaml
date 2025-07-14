@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: btc-logger
+    env: python
+    plan: starter
+    buildCommand: pip install -r render_app/requirements.txt
+    startCommand: cd render_app && python start_server.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: PORT
+        value: 10000

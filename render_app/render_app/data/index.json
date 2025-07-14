@@ -1,8 +1,23 @@
 {
-  "available_days": [
-    "output_2025-07-06.json"
-  ],
-  "historical_file": "historical.json",
-  "metadata_file": "metadata.json",
-  "last_updated": "2025-07-09T18:51:09.745181"
+  "data_sources": {
+    "recent": {
+      "file": "recent.json",
+      "description": "Last 24 hours (fast loading)",
+      "records": 2,
+      "update_frequency": "every_second"
+    },
+    "historical": {
+      "file": "historical.json",
+      "description": "Complete dataset (full history)",
+      "records": 3,
+      "update_frequency": "hourly"
+    }
+  },
+  "daily_files": [],
+  "recommended_usage": {
+    "fast_chart_startup": "Load /recent.json first",
+    "full_historical_view": "Load /historical.json for complete data",
+    "hybrid_approach": "Load recent first, then historical in background"
+  },
+  "last_updated": "2025-07-14T21:03:00.894910"
 }
