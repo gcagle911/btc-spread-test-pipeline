@@ -1,8 +1,10 @@
 # BTC Logger - Enhanced for Historical Data Support
 # Updated: 2025-07-10 - Added hybrid data endpoints and improved debugging
+# Updated: 2025-07-10 - Added Google Cloud Storage auto-backup functionality
 
 from flask_cors import CORS
 from process_data import process_csv_to_json
+from gcs_backup import auto_backup_data, backup_file, get_gcs_backup
 import requests
 import csv
 import time
@@ -10,14 +12,24 @@ import os
 from datetime import datetime, UTC
 from flask import Flask, jsonify, send_file, send_from_directory, abort
 import threading
+import logging
 
 app = Flask(__name__)
 CORS(app)
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 last_logged = {"timestamp": None}
 
 DATA_FOLDER = "render_app/data"
 os.makedirs(DATA_FOLDER, exist_ok=True)
+
+# GCS Backup configuration
+BACKUP_ENABLED = os.getenv('GCS_BACKUP_ENABLED', 'true').lower() in ['true', '1', 'yes']
+BACKUP_INTERVAL_MINUTES = int(os.getenv('BACKUP_INTERVAL_MINUTES', '30'))  # Backup every 30 minutes by default
+last_backup_time = {"timestamp": None}
 
 # 🔁 Rotates files every 8 hours (00, 08, 16 UTC)
 def get_current_csv_filename():
@@ -85,6 +97,9 @@ def log_data():
 
             # Run comprehensive JSON generation with full historical context
             process_csv_to_json()
+            
+            # Check if backup is needed
+            check_and_backup_data()
 
         except Exception as e:
             print("🚨 Error in logger loop:", str(e))
@@ -92,6 +107,51 @@ def log_data():
         elapsed = time.time() - start_time
         sleep_time = max(0, 1.0 - elapsed)
         time.sleep(sleep_time)
+
+def check_and_backup_data():
+    """Check if backup is needed and perform it"""
+    if not BACKUP_ENABLED:
+        return
+    
+    current_time = datetime.now(UTC)
+    
+    # Check if enough time has passed since last backup
+    if last_backup_time["timestamp"] is None:
+        should_backup = True
+    else:
+        time_diff = (current_time - last_backup_time["timestamp"]).total_seconds() / 60
+        should_backup = time_diff >= BACKUP_INTERVAL_MINUTES
+    
+    if should_backup:
+        try:
+            logger.info(f"🔄 Starting automatic backup...")
+            result = auto_backup_data()
+            if result:
+                last_backup_time["timestamp"] = current_time
+                logger.info(f"✅ Backup completed: {result['successful_uploads']} files uploaded")
+            else:
+                logger.warning("⚠️ Backup failed or not configured")
+        except Exception as e:
+            logger.error(f"❌ Backup error: {e}")
+
+def manual_backup():
+    """Manually trigger a backup"""
+    if not BACKUP_ENABLED:
+        return {"error": "Backup is disabled"}
+    
+    try:
+        result = auto_backup_data()
+        if result:
+            last_backup_time["timestamp"] = datetime.now(UTC)
+            return {
+                "success": True,
+                "message": f"Backup completed: {result['successful_uploads']} files uploaded",
+                "details": result
+            }
+        else:
+            return {"error": "Backup failed or not configured"}
+    except Exception as e:
+        return {"error": f"Backup error: {str(e)}"}
 
 # ---- Flask Routes ----
 
@@ -300,6 +360,52 @@ def debug_status():
         
     except Exception as e:
         return jsonify({"error": f"Debug status error: {str(e)}"}), 500
+
+@app.route("/backup", methods=["POST"])
+def trigger_backup():
+    """Manually trigger a backup to Google Cloud Storage"""
+    result = manual_backup()
+    if "error" in result:
+        return jsonify(result), 500
+    else:
+        return jsonify(result)
+
+@app.route("/backup/status")
+def backup_status():
+    """Get backup configuration and status"""
+    backup = get_gcs_backup()
+    
+    status = {
+        "backup_enabled": BACKUP_ENABLED,
+        "backup_interval_minutes": BACKUP_INTERVAL_MINUTES,
+        "last_backup_time": last_backup_time["timestamp"].isoformat() if last_backup_time["timestamp"] else None,
+        "gcs_configured": backup is not None
+    }
+    
+    if backup:
+        try:
+            status["bucket_name"] = backup.bucket_name
+            status["project_id"] = backup.project_id
+        except:
+            status["gcs_configured"] = False
+    
+    return jsonify(status)
+
+@app.route("/backup/list")
+def list_backups():
+    """List all backup files in Google Cloud Storage"""
+    backup = get_gcs_backup()
+    if not backup:
+        return jsonify({"error": "GCS backup not configured"}), 500
+    
+    try:
+        backups = backup.list_backups()
+        return jsonify({
+            "backups": backups,
+            "count": len(backups)
+        })
+    except Exception as e:
+        return jsonify({"error": f"Failed to list backups: {str(e)}"}), 500
 
 # ---- App Runner ----
 
