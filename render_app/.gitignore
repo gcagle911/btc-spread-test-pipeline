@@ -1,0 +1,41 @@
+# Google Cloud Storage Backup - Security Files
+# NEVER commit these files to version control!
+
+# Environment configuration
+.env
+.env.*
+
+# Google Cloud service account keys
+*.json
+gcs-service-account.json
+google-credentials.json
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Data files (optional - comment out if you want to track small test files)
+data/
+*.csv
+*.log
+
+# Backup test files
+test_backup.txt
+verify_*.json
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
