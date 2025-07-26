@@ -3,7 +3,7 @@
     "recent": {
       "file": "recent.json",
       "description": "Last 24 hours (fast loading)",
-      "records": 2,
+      "records": 0,
       "update_frequency": "every_second"
     },
     "historical": {
@@ -19,5 +19,5 @@
     "full_historical_view": "Load /historical.json for complete data",
     "hybrid_approach": "Load recent first, then historical in background"
   },
-  "last_updated": "2025-07-14T21:03:00.894910"
+  "last_updated": "2025-07-26T21:36:00.172375"
 }
