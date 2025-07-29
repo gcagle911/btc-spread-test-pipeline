@@ -127,7 +127,7 @@ def should_update_historical():
         
         print(f"📅 Historical file age: {age_hours:.1f} hours (threshold: 1.0)")
         
-        should_update = age_hours > 1.0
+        should_update = age_hours >= 1.0  # Changed from > to >= to fix deadlock
         if should_update:
             print("⏰ File is old enough, will update historical data")
         else:
@@ -187,8 +187,10 @@ def save_daily_jsons(df_full):
         output_file = f"output_{date}.json"
         output_path = os.path.join(DATA_FOLDER, output_file)
         
+        # Always update daily files if we have data for that date
         day_data_clean.to_json(output_path, orient="records", date_format="iso")
         daily_files.append(output_file)
+        print(f"📅 Updated daily file: {output_file} ({len(day_data_clean)} records)")
     
     return daily_files
 
@@ -245,10 +247,26 @@ def process_csv_to_json():
     # Step 3: Always save recent data (fast for charts)
     recent_count = save_recent_data(df_processed)
     
-    # Step 4: Check if we need to update historical data
+    # Step 4: Always update historical data if we have new CSV data
     historical_count = len(df_processed)
-    if should_update_historical():
-        print("⏰ Updating historical data (hourly update)")
+    
+    # Check if we have newer CSV data than the last historical update
+    historical_path = os.path.join(DATA_FOLDER, "historical.json")
+    should_force_update = False
+    
+    if os.path.exists(historical_path):
+        # Get the newest CSV file timestamp
+        csv_files = glob.glob(os.path.join(DATA_FOLDER, "*.csv"))
+        if csv_files:
+            newest_csv_time = max(os.path.getmtime(f) for f in csv_files)
+            historical_time = os.path.getmtime(historical_path)
+            
+            if newest_csv_time > historical_time:
+                print("🔄 Found newer CSV data, forcing historical update")
+                should_force_update = True
+    
+    if should_update_historical() or should_force_update:
+        print("⏰ Updating historical data")
         historical_count = save_historical_data(df_processed)
         
         # Also update daily files when historical updates
