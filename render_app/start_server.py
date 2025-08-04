@@ -14,12 +14,23 @@ import time
 import threading
 from datetime import datetime, timedelta
 import pandas as pd
+import logging
 
 # Add current directory to path so we can import our modules
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from logger import app, log_data
 from process_data import process_csv_to_json
+
+# Import enhanced backup components
+try:
+    from enhanced_backup_system import get_backup_system
+    from startup_restore import startup_check, check_data_integrity
+    BACKUP_AVAILABLE = True
+    logging.info("✅ Enhanced backup system available")
+except ImportError as e:
+    logging.warning(f"⚠️ Enhanced backup system not available: {e}")
+    BACKUP_AVAILABLE = False
 
 DATA_FOLDER = "render_app/data"
 
@@ -178,6 +189,32 @@ def main():
     # Start the data logger
     start_logger_thread()
     
+    # Initialize backup system
+    if BACKUP_AVAILABLE:
+        print("\n🔒 Initializing Enhanced Backup System...")
+        try:
+            # Run startup check and restore if needed
+            if startup_check():
+                print("✅ Data integrity check passed")
+            else:
+                print("⚠️ Data integrity issues detected, but continuing...")
+            
+            # Initialize backup system
+            backup_system = get_backup_system()
+            available_providers = backup_system.get_available_providers()
+            print(f"📦 Available backup providers: {', '.join(available_providers)}")
+            
+            if 'gcs' in available_providers:
+                print("☁️ Google Cloud Storage backup available")
+            else:
+                print("💾 Using local backup only (to enable cloud backup, configure GCS)")
+                
+        except Exception as e:
+            print(f"⚠️ Backup system initialization failed: {e}")
+            print("📊 Continuing without enhanced backup...")
+    else:
+        print("📊 Enhanced backup system not available, using basic setup")
+    
     # Wait a moment for everything to initialize
     time.sleep(2)
     
@@ -192,6 +229,9 @@ def main():
     print("2. Open render_app/improved_btc_chart.html to view the enhanced chart")
     print("3. The chart will auto-detect localhost and use the correct API endpoint")
     print("4. Data will update automatically every 30 seconds when auto-refresh is enabled")
+    if BACKUP_AVAILABLE:
+        print(f"5. Monitor backups at http://localhost:{port}/dashboard")
+        print(f"6. Check system health at http://localhost:{port}/health")
     
     try:
         print(f"\n🚀 Starting Flask server on http://localhost:{port}...")

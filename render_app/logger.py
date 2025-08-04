@@ -5,6 +5,14 @@
 from flask_cors import CORS
 from process_data import process_csv_to_json
 from gcs_backup import auto_backup_data, backup_file, get_gcs_backup
+
+# Try to import enhanced backup system
+try:
+    from enhanced_backup_system import get_backup_system
+    from startup_restore import check_data_integrity
+    ENHANCED_BACKUP_AVAILABLE = True
+except ImportError:
+    ENHANCED_BACKUP_AVAILABLE = False
 import requests
 import csv
 import time
@@ -125,10 +133,24 @@ def check_and_backup_data():
     if should_backup:
         try:
             logger.info(f"🔄 Starting automatic backup...")
+            
+            # Try enhanced backup first if available
+            if ENHANCED_BACKUP_AVAILABLE:
+                try:
+                    backup_system = get_backup_system()
+                    result = backup_system.check_and_backup_if_needed()
+                    if result and result.get('success'):
+                        last_backup_time["timestamp"] = current_time
+                        logger.info(f"✅ Enhanced backup completed: {result.get('total_files', 0)} files uploaded")
+                        return
+                except Exception as e:
+                    logger.warning(f"⚠️ Enhanced backup failed, falling back to GCS: {e}")
+            
+            # Fallback to original GCS backup
             result = auto_backup_data()
             if result:
                 last_backup_time["timestamp"] = current_time
-                logger.info(f"✅ Backup completed: {result['successful_uploads']} files uploaded")
+                logger.info(f"✅ GCS backup completed: {result['successful_uploads']} files uploaded")
             else:
                 logger.warning("⚠️ Backup failed or not configured")
         except Exception as e:
@@ -157,31 +179,57 @@ def manual_backup():
 
 @app.route("/")
 def home():
-    return {
-        "status": "✅ BTC Logger is running",
-        "last_log_time": last_logged["timestamp"],
-        "description": "TradingView-style BTC-USD data with hybrid loading system",
-        "endpoints": {
-            "csv_data": [
-                "/data.csv - Current CSV file",
-                "/csv-list - List all CSV files",
-                "/csv/<filename> - Download specific CSV"
-            ],
-            "json_data": [
-                "/json/output_<YYYY-MM-DD>.json - Daily JSON data",
-                "/output-latest.json - Latest daily JSON"
-            ],
-            "hybrid_chart_data": [
-                "/recent.json - Last 24 hours (fast loading, updated every second)",
-                "/historical.json - Complete dataset (full history, updated hourly)",
-                "/metadata.json - Dataset metadata",
-                "/index.json - Data source index"
-            ],
+    # Check if enhanced backup is available
+    enhanced_backup_status = "Not Available"
+    if ENHANCED_BACKUP_AVAILABLE:
+        try:
+            backup_system = get_backup_system()
+            providers = backup_system.get_available_providers()
+            enhanced_backup_status = f"Available ({', '.join(providers)})"
+        except:
+            enhanced_backup_status = "Error"
+    
+    endpoints = {
+        "csv_data": [
+            "/data.csv - Current CSV file",
+            "/csv-list - List all CSV files",
+            "/csv/<filename> - Download specific CSV"
+        ],
+        "json_data": [
+            "/json/output_<YYYY-MM-DD>.json - Daily JSON data",
+            "/output-latest.json - Latest daily JSON"
+        ],
+        "hybrid_chart_data": [
+            "/recent.json - Last 24 hours (fast loading, updated every second)",
+            "/historical.json - Complete dataset (full history, updated hourly)",
+            "/metadata.json - Dataset metadata",
+            "/index.json - Data source index"
+        ],
             "filtered_data": [
                 "/chart-data?limit=1000 - Limited data points",
                 "/chart-data?start_date=2025-01-01 - Date filtered data"
-            ]
-        },
+            ],
+            "backup_management": [
+                "/backup/status - Legacy backup status",
+                "/backup/trigger - Legacy manual backup",
+                "/backup/list - List legacy backups"
+            ] + ([
+                "/backup/enhanced/status - Enhanced backup status",
+                "/backup/enhanced/trigger - Enhanced manual backup",
+                "/backup/enhanced/restore - Manual restore",
+                "/backup/enhanced/list - List enhanced backups"
+            ] if ENHANCED_BACKUP_AVAILABLE else []),
+            "health_monitoring": [
+                "/health - System health check"
+            ] + (["/dashboard - Backup dashboard"] if ENHANCED_BACKUP_AVAILABLE else [])
+        }
+    
+    return {
+        "status": "✅ BTC Logger is running" + (" with Enhanced Backup" if ENHANCED_BACKUP_AVAILABLE else ""),
+        "last_log_time": last_logged["timestamp"],
+        "description": "TradingView-style BTC-USD data with hybrid loading system and automated backup",
+        "enhanced_backup": enhanced_backup_status,
+        "endpoints": endpoints,
         "chart_integration": {
             "recommended_approach": "Hybrid loading for TradingView-style performance",
             "fast_startup": "Load /recent.json first (instant chart display)",
@@ -406,6 +454,160 @@ def list_backups():
         })
     except Exception as e:
         return jsonify({"error": f"Failed to list backups: {str(e)}"}), 500
+
+# ---- Enhanced Backup Routes ----
+
+if ENHANCED_BACKUP_AVAILABLE:
+    @app.route("/backup/enhanced/status")
+    def enhanced_backup_status():
+        """Get enhanced backup system status"""
+        try:
+            backup_system = get_backup_system()
+            status = backup_system.get_backup_status()
+            integrity_check = check_data_integrity()
+            
+            return jsonify({
+                "enhanced_backup": True,
+                "backup_system": status,
+                "data_integrity": integrity_check,
+                "available_providers": backup_system.get_available_providers()
+            })
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/backup/enhanced/trigger", methods=["POST"])
+    def enhanced_trigger_backup():
+        """Manually trigger enhanced backup"""
+        try:
+            from flask import request
+            backup_system = get_backup_system()
+            providers = request.json.get('providers', None) if request.is_json else None
+            result = backup_system.backup_all_data(providers)
+            
+            if result.get('success'):
+                return jsonify({
+                    "success": True,
+                    "message": "Enhanced backup completed successfully",
+                    "details": result
+                })
+            else:
+                return jsonify({
+                    "success": False,
+                    "message": result.get('error', 'Enhanced backup failed'),
+                    "details": result
+                }), 500
+                
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/backup/enhanced/restore", methods=["POST"])
+    def enhanced_restore_backup():
+        """Manually restore from enhanced backup"""
+        try:
+            from flask import request
+            backup_system = get_backup_system()
+            data = request.json if request.is_json else {}
+            provider = data.get('provider', None)
+            target_folder = data.get('target_folder', None)
+            
+            result = backup_system.restore_latest_backup(provider, target_folder)
+            
+            if result.get('success'):
+                return jsonify({
+                    "success": True,
+                    "message": "Enhanced restore completed successfully",
+                    "details": result
+                })
+            else:
+                return jsonify({
+                    "success": False,
+                    "message": result.get('error', 'Enhanced restore failed'),
+                    "details": result
+                }), 500
+                
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/backup/enhanced/list")
+    def enhanced_list_backups():
+        """List all enhanced backup files"""
+        try:
+            backup_system = get_backup_system()
+            providers = backup_system.get_available_providers()
+            all_backups = {}
+            
+            for provider_name in providers:
+                provider = backup_system.providers[provider_name]
+                backup_files = provider.list_files("btc-data/")
+                all_backups[provider_name] = backup_files
+            
+            return jsonify({
+                "enhanced_backup": True,
+                "providers": providers,
+                "backups": all_backups,
+                "total_files": sum(len(files) for files in all_backups.values())
+            })
+            
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+@app.route("/health")
+def health_check():
+    """Comprehensive health check"""
+    try:
+        # Basic health info
+        health_info = {
+            "status": "healthy",
+            "timestamp": datetime.now(UTC).isoformat(),
+            "last_log_time": last_logged["timestamp"],
+            "backup_enabled": BACKUP_ENABLED
+        }
+        
+        # Add enhanced backup info if available
+        if ENHANCED_BACKUP_AVAILABLE:
+            try:
+                integrity_check = check_data_integrity()
+                backup_system = get_backup_system()
+                backup_status = backup_system.get_backup_status()
+                
+                # Determine overall health
+                is_healthy = (
+                    not integrity_check['needs_restore'] and
+                    backup_status and
+                    backup_status.get('backup_enabled', False)
+                )
+                
+                health_info.update({
+                    "enhanced_backup": True,
+                    "status": "healthy" if is_healthy else "degraded",
+                    "data_integrity": integrity_check,
+                    "backup_status": backup_status
+                })
+            except Exception as e:
+                health_info.update({
+                    "enhanced_backup": False,
+                    "enhanced_backup_error": str(e)
+                })
+        
+        return jsonify(health_info)
+        
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "timestamp": datetime.now(UTC).isoformat(),
+            "error": str(e)
+        }), 500
+
+@app.route("/dashboard")
+def backup_dashboard():
+    """Serve the backup dashboard"""
+    try:
+        return send_file("backup_dashboard.html")
+    except FileNotFoundError:
+        return jsonify({
+            "error": "Dashboard not found", 
+            "message": "backup_dashboard.html file is missing"
+        }), 404
 
 # ---- App Runner ----
 
