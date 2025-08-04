@@ -140,7 +140,7 @@ def should_update_historical():
         return True  # Force update if timestamp check fails
 
 def should_rotate_historical():
-    """Check if we should archive older data (weekly rotation)"""
+    """Check if we should archive older data (monthly rotation for 1-year dataset)"""
     historical_path = os.path.join(DATA_FOLDER, "historical.json")
     
     if not os.path.exists(historical_path):
@@ -150,14 +150,14 @@ def should_rotate_historical():
         file_time = datetime.fromtimestamp(os.path.getmtime(historical_path))
         now = datetime.utcnow()
         
-        # Only rotate weekly to avoid too frequent archiving
-        # This keeps historical.json with good chart data (7 days)
+        # Rotate monthly since we're keeping 1 year of data
+        # This prevents too frequent archiving while managing file size
         days_old = (now - file_time).days
         
-        should_rotate = days_old >= 7
+        should_rotate = days_old >= 30  # Monthly rotation
         
         if should_rotate:
-            print(f"📅 Historical file is {days_old} days old - archiving old data!")
+            print(f"📅 Historical file is {days_old} days old - archiving old data (monthly rotation)!")
         
         return should_rotate
         
@@ -198,59 +198,62 @@ def save_historical_data(df_full):
     if df_full is None or df_full.empty:
         return
     
-    # Archive old data first if needed
+    # Archive old data first if needed (still weekly rotation)
     if should_rotate_historical():
         rotate_historical_file()
     
     now = datetime.utcnow()
     
-    # Strategy: Keep last 7 days in historical.json for chart performance
-    # This gives charts good context while keeping file size manageable
-    cutoff_time = now - timedelta(days=7)
+    # Strategy: Keep last 365 days (1 year) in historical.json for extensive chart history
+    # This allows charts to display long-term trends while managing file size reasonably
+    cutoff_time = now - timedelta(days=365)
     
     # Convert time column to datetime if it's a string
     if df_full['time'].dtype == 'object':
         df_full['time'] = pd.to_datetime(df_full['time'])
     
-    # Filter to last 7 days for historical.json
+    # Filter to last 365 days for historical.json
     df_chart_optimized = df_full[df_full['time'] >= cutoff_time].copy()
     
     if df_chart_optimized.empty:
-        print(f"ℹ️ No data in last 7 days, using all available data")
+        print(f"ℹ️ No data in last 365 days, using all available data")
         df_chart_optimized = df_full.copy()
     
-    # Save chart-optimized historical data (7 days)
     historical_path = os.path.join(DATA_FOLDER, "historical.json")
-    df_chart_optimized.to_json(historical_path, orient="records", date_format="iso")
     
-    # Create metadata
-    days_included = (now - df_chart_optimized['time'].min()).days + 1 if not df_chart_optimized.empty else 0
-    
-    metadata = {
-        "generated_at": datetime.utcnow().isoformat(),
-        "total_records": len(df_chart_optimized),
-        "days_included": min(days_included, 7),
-        "optimization": "Last 7 days for chart performance",
-        "date_range": {
-            "start": df_chart_optimized["time"].min(),
-            "end": df_chart_optimized["time"].max()
-        },
-        "ma_info": {
-            "ma_50_valid_count": int(df_chart_optimized["ma_50_valid"].sum()),
-            "ma_100_valid_count": int(df_chart_optimized["ma_100_valid"].sum()),
-            "ma_200_valid_count": int(df_chart_optimized["ma_200_valid"].sum())
-        },
-        "file_size_mb": round(os.path.getsize(historical_path) / 1024 / 1024, 2),
-        "update_frequency": "hourly, optimized for charts"
-    }
-    
-    # Save metadata
-    metadata_path = os.path.join(DATA_FOLDER, "metadata.json")
-    with open(metadata_path, "w") as f:
-        json.dump(metadata, f, indent=2, default=str)
-    
-    print(f"📚 Saved historical.json: {len(df_chart_optimized)} records ({days_included} days, {metadata['file_size_mb']}MB)")
-    return len(df_chart_optimized)
+    try:
+        # Save as JSON with proper formatting
+        records = df_chart_optimized.to_dict('records')
+        
+        # Add metadata for charts
+        metadata = {
+            "generated_at": now.isoformat(),
+            "data_range_days": 365,
+            "total_records": len(records),
+            "data_type": "1-minute OHLC with moving averages",
+            "update_frequency": "hourly, optimized for charts",
+            "first_timestamp": records[0]['time'] if records else None,
+            "last_timestamp": records[-1]['time'] if records else None,
+            "description": "1-year historical data optimized for long-term chart display"
+        }
+        
+        # Save the data
+        with open(historical_path, 'w') as f:
+            json.dump(records, f, separators=(',', ':'))  # Compact format
+        
+        print(f"✅ Historical data saved: {len(records)} records (365-day window)")
+        print(f"📊 Data range: {metadata['first_timestamp']} to {metadata['last_timestamp']}")
+        
+        # Also save metadata separately
+        metadata_path = os.path.join(DATA_FOLDER, "metadata.json")
+        with open(metadata_path, 'w') as f:
+            json.dump(metadata, f, indent=2)
+            
+        return len(records)
+        
+    except Exception as e:
+        print(f"❌ Error saving historical data: {e}")
+        return 0
 
 def save_daily_jsons(df_full):
     """Create individual daily JSON files for compatibility"""
@@ -359,10 +362,11 @@ def process_csv_to_json():
     
     print("✅ Hybrid processing complete!")
     print(f"⚡ Recent data: {recent_count} records (updated every second)")
-    print(f" Historical data: {historical_count} records (updated hourly)")
+    print(f"📚 Historical data: {historical_count} records (365-day window, updated hourly)")
     print("🔄 Charts can use:")
-    print("   - /recent.json for fast startup")
-    print("   - /historical.json for complete data")
+    print("   - /recent.json for fast startup (24 hours)")
+    print("   - /historical.json for long-term data (1 year)")
+    print("   - /historical-combined for maximum range (all data)")
 
 # Legacy function for compatibility
 def process_today_only():

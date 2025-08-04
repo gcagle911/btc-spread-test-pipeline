@@ -21,6 +21,7 @@ from datetime import datetime, UTC
 from flask import Flask, jsonify, send_file, send_from_directory, abort
 import threading
 import logging
+import json
 
 app = Flask(__name__)
 CORS(app)
@@ -201,7 +202,8 @@ def home():
         ],
         "hybrid_chart_data": [
             "/recent.json - Last 24 hours (fast loading, updated every second)",
-            "/historical.json - Last 7 days (chart-optimized, updated hourly)",
+            "/historical.json - Last 365 days (1-year chart data, updated hourly)",
+"/historical-combined - All available data (current + archives, maximum range)",
             "/historical/<YYYY-MM-DD>.json - Archived historical data for specific date",
             "/historical-archives - List all available historical archives",
             "/metadata.json - Dataset metadata",
@@ -352,6 +354,68 @@ def list_historical_archives():
         
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route("/historical-combined")
+def serve_combined_historical_data():
+    """Serve all historical data combined (current + archives) for maximum chart range"""
+    try:
+        import glob
+        combined_data = []
+        
+        # Load current historical.json (1 year of data)
+        current_path = os.path.join(DATA_FOLDER, "historical.json")
+        if os.path.exists(current_path):
+            with open(current_path, 'r') as f:
+                current_data = json.load(f)
+                combined_data.extend(current_data)
+        
+        # Load all archived files
+        pattern = os.path.join(DATA_FOLDER, "historical_*.json")
+        archive_files = sorted(glob.glob(pattern))
+        
+        for archive_file in archive_files:
+            try:
+                with open(archive_file, 'r') as f:
+                    archive_data = json.load(f)
+                    combined_data.extend(archive_data)
+            except Exception as e:
+                print(f"Warning: Could not load archive {archive_file}: {e}")
+        
+        if not combined_data:
+            return jsonify({"error": "No historical data available"}), 404
+        
+        # Sort by timestamp to ensure chronological order
+        combined_data.sort(key=lambda x: x['time'])
+        
+        # Remove duplicates (keep latest version of each timestamp)
+        seen_times = set()
+        unique_data = []
+        for record in reversed(combined_data):  # Process in reverse to keep latest
+            if record['time'] not in seen_times:
+                seen_times.add(record['time'])
+                unique_data.append(record)
+        
+        unique_data.reverse()  # Restore chronological order
+        
+        return jsonify({
+            "data": unique_data,
+            "metadata": {
+                "total_records": len(unique_data),
+                "data_sources": {
+                    "current_historical": "/historical.json",
+                    "archives_loaded": len(archive_files),
+                    "archive_files": [os.path.basename(f) for f in archive_files]
+                },
+                "date_range": {
+                    "start": unique_data[0]['time'] if unique_data else None,
+                    "end": unique_data[-1]['time'] if unique_data else None
+                },
+                "description": "Combined historical data from all sources for maximum chart range"
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({"error": f"Failed to load combined historical data: {str(e)}"}), 500
 
 @app.route("/metadata.json")
 def serve_metadata():
