@@ -41,6 +41,17 @@ def check_data_integrity(data_folder: str = "render_app/data") -> dict:
             'needs_restore': True
         }
     
+    # Check for critical JSON files and their content
+    historical_path = data_path / "historical.json"
+    if historical_path.exists():
+        file_size = historical_path.stat().st_size
+        if file_size < 100:  # Historical file should be much larger
+            return {
+                'status': 'incomplete',
+                'message': f'Historical file too small ({file_size} bytes) - likely empty',
+                'needs_restore': True
+            }
+    
     # Check if files are recent (within last 2 hours)
     recent_threshold = datetime.now(UTC).timestamp() - (2 * 60 * 60)  # 2 hours ago
     recent_files = []
@@ -144,26 +155,53 @@ def startup_check():
     integrity_check = check_data_integrity()
     logger.info(f"📊 Data integrity check: {integrity_check['status']} - {integrity_check['message']}")
     
-    if not integrity_check['needs_restore']:
-        logger.info("✅ Data is healthy, no restore needed")
-        return True
+    restore_attempted = False
     
-    # Attempt restore
-    logger.warning(f"⚠️ Data issue detected: {integrity_check['message']}")
-    logger.info("🔄 Attempting to restore from backup...")
-    
-    if attempt_restore():
-        # Verify restoration was successful
-        post_restore_check = check_data_integrity()
-        if not post_restore_check['needs_restore']:
-            logger.info("✅ Data successfully restored and verified")
-            return True
+    if integrity_check['needs_restore']:
+        # Attempt restore
+        logger.warning(f"⚠️ Data issue detected: {integrity_check['message']}")
+        logger.info("🔄 Attempting to restore from backup...")
+        
+        if attempt_restore():
+            # Verify restoration was successful
+            post_restore_check = check_data_integrity()
+            if not post_restore_check['needs_restore']:
+                logger.info("✅ Data successfully restored from backup")
+                restore_attempted = True
+            else:
+                logger.error("❌ Data restore verification failed")
+                return False
         else:
-            logger.error("❌ Data restore verification failed")
+            logger.error("❌ Failed to restore data from any backup source")
             return False
-    else:
-        logger.error("❌ Failed to restore data from any backup source")
-        return False
+    
+    # Always force a data rebuild after startup to ensure proper file generation
+    # This is crucial after Render redeploys to rebuild historical.json from CSV data
+    logger.info("🔄 Forcing data rebuild to ensure historical files are properly generated...")
+    try:
+        from process_data import process_csv_to_json
+        
+        # Import here to avoid circular imports
+        import sys
+        import os
+        sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+        
+        process_csv_to_json()
+        logger.info("✅ Data rebuild completed successfully")
+        
+        # Verify the rebuild worked
+        final_check = check_data_integrity()
+        if final_check['needs_restore']:
+            logger.warning(f"⚠️ After rebuild, data still shows issues: {final_check['message']}")
+        else:
+            logger.info("✅ Final data check passed - all files properly generated")
+            
+    except Exception as e:
+        logger.error(f"❌ Error during data rebuild: {e}")
+        # Don't fail startup for rebuild errors, just log them
+        logger.info("⚠️ Continuing startup despite rebuild error...")
+    
+    return True
 
 def create_health_check_endpoint():
     """Create a simple health check that includes backup status"""
