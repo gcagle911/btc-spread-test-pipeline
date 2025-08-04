@@ -46,7 +46,16 @@ class BackupProvider(ABC):
 class LocalBackupProvider(BackupProvider):
     """Local filesystem backup provider"""
     
-    def __init__(self, backup_dir: str = "/tmp/btc_backup"):
+    def __init__(self, backup_dir: str = None):
+        # Use environment variable or default locations
+        if backup_dir is None:
+            backup_dir = os.getenv('LOCAL_BACKUP_DIR')
+            if not backup_dir:
+                # For Render, use the app directory which persists during app lifetime
+                if os.getenv('RENDER_SERVICE_NAME'):  # Render environment
+                    backup_dir = "./backup_data"  # Relative to app directory
+                else:
+                    backup_dir = os.path.expanduser("~/btc_backup")  # Local development
         self.backup_dir = Path(backup_dir)
         self.backup_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"✅ Local backup initialized: {self.backup_dir}")
