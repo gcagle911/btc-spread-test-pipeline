@@ -140,7 +140,7 @@ def should_update_historical():
         return True  # Force update if timestamp check fails
 
 def should_rotate_historical():
-    """Check if historical.json should rotate to a new day"""
+    """Check if we should archive older data (weekly rotation)"""
     historical_path = os.path.join(DATA_FOLDER, "historical.json")
     
     if not os.path.exists(historical_path):
@@ -150,14 +150,14 @@ def should_rotate_historical():
         file_time = datetime.fromtimestamp(os.path.getmtime(historical_path))
         now = datetime.utcnow()
         
-        # Check if the file is from a different day
-        file_date = file_time.date()
-        current_date = now.date()
+        # Only rotate weekly to avoid too frequent archiving
+        # This keeps historical.json with good chart data (7 days)
+        days_old = (now - file_time).days
         
-        should_rotate = file_date < current_date
+        should_rotate = days_old >= 7
         
         if should_rotate:
-            print(f"📅 Historical file is from {file_date}, current date is {current_date} - rotating!")
+            print(f"📅 Historical file is {days_old} days old - archiving old data!")
         
         return should_rotate
         
@@ -194,51 +194,54 @@ def rotate_historical_file():
         print(f"⚠️ Error rotating historical file: {e}")
 
 def save_historical_data(df_full):
-    """Save complete historical dataset (updated hourly, rotated daily)"""
+    """Save optimized historical dataset (chart-friendly with smart rotation)"""
     if df_full is None or df_full.empty:
         return
     
-    # Check if we need to rotate the file first
+    # Archive old data first if needed
     if should_rotate_historical():
         rotate_historical_file()
     
-    # Filter data for current day only
     now = datetime.utcnow()
-    current_date = now.date()
+    
+    # Strategy: Keep last 7 days in historical.json for chart performance
+    # This gives charts good context while keeping file size manageable
+    cutoff_time = now - timedelta(days=7)
     
     # Convert time column to datetime if it's a string
     if df_full['time'].dtype == 'object':
         df_full['time'] = pd.to_datetime(df_full['time'])
     
-    # Filter to current day's data only
-    df_current_day = df_full[df_full['time'].dt.date == current_date].copy()
+    # Filter to last 7 days for historical.json
+    df_chart_optimized = df_full[df_full['time'] >= cutoff_time].copy()
     
-    if df_current_day.empty:
-        print(f"ℹ️ No data for current day ({current_date}), using recent data")
-        # If no current day data, use last 24 hours
-        cutoff_time = now - timedelta(hours=24)
-        df_current_day = df_full[df_full['time'] >= cutoff_time].copy()
+    if df_chart_optimized.empty:
+        print(f"ℹ️ No data in last 7 days, using all available data")
+        df_chart_optimized = df_full.copy()
     
-    # Save current day's historical data
+    # Save chart-optimized historical data (7 days)
     historical_path = os.path.join(DATA_FOLDER, "historical.json")
-    df_current_day.to_json(historical_path, orient="records", date_format="iso")
+    df_chart_optimized.to_json(historical_path, orient="records", date_format="iso")
     
     # Create metadata
+    days_included = (now - df_chart_optimized['time'].min()).days + 1 if not df_chart_optimized.empty else 0
+    
     metadata = {
         "generated_at": datetime.utcnow().isoformat(),
-        "total_records": len(df_current_day),
-        "rotation_date": current_date.isoformat(),
+        "total_records": len(df_chart_optimized),
+        "days_included": min(days_included, 7),
+        "optimization": "Last 7 days for chart performance",
         "date_range": {
-            "start": df_current_day["time"].min(),
-            "end": df_current_day["time"].max()
+            "start": df_chart_optimized["time"].min(),
+            "end": df_chart_optimized["time"].max()
         },
         "ma_info": {
-            "ma_50_valid_count": int(df_current_day["ma_50_valid"].sum()),
-            "ma_100_valid_count": int(df_current_day["ma_100_valid"].sum()),
-            "ma_200_valid_count": int(df_current_day["ma_200_valid"].sum())
+            "ma_50_valid_count": int(df_chart_optimized["ma_50_valid"].sum()),
+            "ma_100_valid_count": int(df_chart_optimized["ma_100_valid"].sum()),
+            "ma_200_valid_count": int(df_chart_optimized["ma_200_valid"].sum())
         },
         "file_size_mb": round(os.path.getsize(historical_path) / 1024 / 1024, 2),
-        "update_frequency": "hourly, rotated daily"
+        "update_frequency": "hourly, optimized for charts"
     }
     
     # Save metadata
@@ -246,8 +249,8 @@ def save_historical_data(df_full):
     with open(metadata_path, "w") as f:
         json.dump(metadata, f, indent=2, default=str)
     
-    print(f"📚 Saved historical.json: {len(df_current_day)} records for {current_date} ({metadata['file_size_mb']}MB)")
-    return len(df_current_day)
+    print(f"📚 Saved historical.json: {len(df_chart_optimized)} records ({days_included} days, {metadata['file_size_mb']}MB)")
+    return len(df_chart_optimized)
 
 def save_daily_jsons(df_full):
     """Create individual daily JSON files for compatibility"""

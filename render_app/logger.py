@@ -201,13 +201,13 @@ def home():
         ],
         "hybrid_chart_data": [
             "/recent.json - Last 24 hours (fast loading, updated every second)",
-            "/historical.json - Current day's data (rotated daily)",
+            "/historical.json - Last 7 days (chart-optimized, updated hourly)",
             "/historical/<YYYY-MM-DD>.json - Archived historical data for specific date",
             "/historical-archives - List all available historical archives",
             "/metadata.json - Dataset metadata",
             "/index.json - Data source index"
         ],
-            "filtered_data": [
+        "filtered_data": [
                 "/chart-data?limit=1000 - Limited data points",
                 "/chart-data?start_date=2025-01-01 - Date filtered data"
             ],
