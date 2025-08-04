@@ -203,6 +203,7 @@ def home():
         "hybrid_chart_data": [
             "/recent.json - Last 24 hours (fast loading, updated every second)",
             "/historical.json - Last 30 days (chart-optimized, updated hourly)",
+"/longterm.json - Compressed hourly data (long-term trends, compact)",
 "/historical-combined - All available data (current + archives, maximum range)",
             "/historical/<YYYY-MM-DD>.json - Archived historical data for specific date",
             "/historical-archives - List all available historical archives",
@@ -475,6 +476,15 @@ def serve_chart_data():
         
     except Exception as e:
         return jsonify({"error": f"Error processing chart data: {str(e)}"}), 500
+
+@app.route("/longterm.json")
+def serve_longterm_data():
+    """Serve compressed long-term dataset for extended chart views"""
+    file_path = os.path.join(DATA_FOLDER, "longterm.json")
+    if os.path.exists(file_path):
+        return send_file(file_path, mimetype='application/json')
+    else:
+        return jsonify({"error": "Long-term data not available"}), 404
 
 @app.route("/debug-status")
 def debug_status():

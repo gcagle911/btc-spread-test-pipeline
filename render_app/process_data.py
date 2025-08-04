@@ -255,6 +255,73 @@ def save_historical_data(df_full):
         print(f"❌ Error saving historical data: {e}")
         return 0
 
+def save_compressed_longterm_data(df_full):
+    """Create a compressed long-term dataset for extended chart views"""
+    if df_full is None or df_full.empty:
+        return 0
+    
+    # Convert time column to datetime if it's a string
+    if df_full['time'].dtype == 'object':
+        df_full['time'] = pd.to_datetime(df_full['time'])
+    
+    # Create a copy and set time as index for resampling
+    df_longterm = df_full.copy()
+    df_longterm.set_index('time', inplace=True)
+    
+    # Resample to hourly data (60x compression from 1-minute data)
+    # This dramatically reduces file size while preserving trends
+    df_hourly = df_longterm.resample('1H').agg({
+        'price': 'last',  # Last price in the hour
+        'spread_avg_L20_pct': 'mean',  # Average spread
+        'ma_50': 'last',
+        'ma_100': 'last', 
+        'ma_200': 'last',
+        'ma_50_valid': 'last',
+        'ma_100_valid': 'last',
+        'ma_200_valid': 'last'
+    }).dropna()
+    
+    # Reset index to get time back as a column
+    df_hourly.reset_index(inplace=True)
+    df_hourly.rename(columns={'time': 'time'}, inplace=True)
+    
+    # Add time_dt for compatibility
+    df_hourly['time_dt'] = df_hourly['time']
+    
+    longterm_path = os.path.join(DATA_FOLDER, "longterm.json")
+    
+    try:
+        # Save as JSON with proper formatting
+        records = df_hourly.to_dict('records')
+        
+        # Add metadata
+        now = datetime.utcnow()
+        metadata = {
+            "generated_at": now.isoformat(),
+            "data_resolution": "1 hour",
+            "compression_ratio": "60:1 from 1-minute data",
+            "total_records": len(records),
+            "data_type": "Hourly OHLC with moving averages",
+            "update_frequency": "hourly, optimized for long-term charts",
+            "first_timestamp": records[0]['time'] if records else None,
+            "last_timestamp": records[-1]['time'] if records else None,
+            "description": "Compressed historical data for long-term chart performance"
+        }
+        
+        # Save the compressed data
+        with open(longterm_path, 'w') as f:
+            json.dump(records, f, separators=(',', ':'))  # Compact format
+        
+        compression_ratio = len(df_full) / len(records) if records else 0
+        print(f"📈 Long-term data saved: {len(records)} hourly records ({compression_ratio:.1f}x compression)")
+        print(f"🗂️ Date range: {metadata['first_timestamp']} to {metadata['last_timestamp']}")
+        
+        return len(records)
+        
+    except Exception as e:
+        print(f"❌ Error saving long-term data: {e}")
+        return 0
+
 def save_daily_jsons(df_full):
     """Create individual daily JSON files for compatibility"""
     if df_full is None or df_full.empty:
@@ -276,7 +343,7 @@ def save_daily_jsons(df_full):
     
     return daily_files
 
-def save_index_json(daily_files, recent_count, historical_count):
+def save_index_json(daily_files, recent_count, historical_count, longterm_count=0):
     """Create index file with information about all data sources"""
     index_data = {
         "data_sources": {
@@ -288,16 +355,24 @@ def save_index_json(daily_files, recent_count, historical_count):
             },
             "historical": {
                 "file": "historical.json", 
-                "description": "Complete dataset (full history)",
+                "description": "30-day dataset (chart optimized)",
                 "records": historical_count,
                 "update_frequency": "hourly"
+            },
+            "longterm": {
+                "file": "longterm.json",
+                "description": "Compressed hourly data (long-term trends)",
+                "records": longterm_count,
+                "update_frequency": "hourly",
+                "compression": "60:1 from minute data"
             }
         },
         "daily_files": sorted(daily_files),
         "recommended_usage": {
             "fast_chart_startup": "Load /recent.json first",
-            "full_historical_view": "Load /historical.json for complete data",
-            "hybrid_approach": "Load recent first, then historical in background"
+            "medium_term_view": "Load /historical.json for 30-day data",
+            "long_term_trends": "Load /longterm.json for compact historical view",
+            "hybrid_approach": "Load recent first, then historical/longterm as needed"
         },
         "last_updated": datetime.utcnow().isoformat()
     }
@@ -351,21 +426,27 @@ def process_csv_to_json():
         print("⏰ Updating historical data")
         historical_count = save_historical_data(df_processed)
         
+        # Also create compressed long-term data
+        longterm_count = save_compressed_longterm_data(df_processed)
+        
         # Also update daily files when historical updates
         daily_files = save_daily_jsons(df_processed)
     else:
         print("⏸️ Skipping historical update (updated within last hour)")
         daily_files = []
+        longterm_count = 0
     
     # Step 5: Update index
-    save_index_json(daily_files, recent_count, historical_count)
+    save_index_json(daily_files, recent_count, historical_count, longterm_count)
     
     print("✅ Hybrid processing complete!")
     print(f"⚡ Recent data: {recent_count} records (updated every second)")
     print(f"📚 Historical data: {historical_count} records (30-day window, updated hourly)")
+    print(f"📈 Long-term data: {longterm_count} records (compressed hourly, all available data)")
     print("🔄 Charts can use:")
     print("   - /recent.json for fast startup (24 hours)")
     print("   - /historical.json for medium-term data (30 days)")
+    print("   - /longterm.json for long-term trends (hourly data, compact)")
     print("   - /historical-combined for maximum range (all archived data)")
 
 # Legacy function for compatibility
