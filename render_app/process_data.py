@@ -139,30 +139,106 @@ def should_update_historical():
         print(f"⚠️ Error checking file timestamp: {e}, forcing update")
         return True  # Force update if timestamp check fails
 
+def should_rotate_historical():
+    """Check if historical.json should rotate to a new day"""
+    historical_path = os.path.join(DATA_FOLDER, "historical.json")
+    
+    if not os.path.exists(historical_path):
+        return False  # Can't rotate if file doesn't exist
+    
+    try:
+        file_time = datetime.fromtimestamp(os.path.getmtime(historical_path))
+        now = datetime.utcnow()
+        
+        # Check if the file is from a different day
+        file_date = file_time.date()
+        current_date = now.date()
+        
+        should_rotate = file_date < current_date
+        
+        if should_rotate:
+            print(f"📅 Historical file is from {file_date}, current date is {current_date} - rotating!")
+        
+        return should_rotate
+        
+    except Exception as e:
+        print(f"⚠️ Error checking rotation date: {e}")
+        return False
+
+def rotate_historical_file():
+    """Rotate historical.json to a daily archive and start fresh"""
+    historical_path = os.path.join(DATA_FOLDER, "historical.json")
+    
+    if not os.path.exists(historical_path):
+        print("ℹ️ No historical.json to rotate")
+        return
+    
+    try:
+        # Get the file's date
+        file_time = datetime.fromtimestamp(os.path.getmtime(historical_path))
+        archive_date = file_time.strftime("%Y-%m-%d")
+        
+        # Create archive filename
+        archive_path = os.path.join(DATA_FOLDER, f"historical_{archive_date}.json")
+        
+        # Move current historical to archive (if archive doesn't already exist)
+        if not os.path.exists(archive_path):
+            os.rename(historical_path, archive_path)
+            print(f"📦 Archived historical.json → historical_{archive_date}.json")
+        else:
+            # Archive already exists, just remove current
+            os.remove(historical_path)
+            print(f"🗑️ Removed old historical.json (archive historical_{archive_date}.json already exists)")
+            
+    except Exception as e:
+        print(f"⚠️ Error rotating historical file: {e}")
+
 def save_historical_data(df_full):
-    """Save complete historical dataset (updated hourly)"""
+    """Save complete historical dataset (updated hourly, rotated daily)"""
     if df_full is None or df_full.empty:
         return
     
-    # Save complete historical data
+    # Check if we need to rotate the file first
+    if should_rotate_historical():
+        rotate_historical_file()
+    
+    # Filter data for current day only
+    now = datetime.utcnow()
+    current_date = now.date()
+    
+    # Convert time column to datetime if it's a string
+    if df_full['time'].dtype == 'object':
+        df_full['time'] = pd.to_datetime(df_full['time'])
+    
+    # Filter to current day's data only
+    df_current_day = df_full[df_full['time'].dt.date == current_date].copy()
+    
+    if df_current_day.empty:
+        print(f"ℹ️ No data for current day ({current_date}), using recent data")
+        # If no current day data, use last 24 hours
+        cutoff_time = now - timedelta(hours=24)
+        df_current_day = df_full[df_full['time'] >= cutoff_time].copy()
+    
+    # Save current day's historical data
     historical_path = os.path.join(DATA_FOLDER, "historical.json")
-    df_full.to_json(historical_path, orient="records", date_format="iso")
+    df_current_day.to_json(historical_path, orient="records", date_format="iso")
     
     # Create metadata
     metadata = {
         "generated_at": datetime.utcnow().isoformat(),
-        "total_records": len(df_full),
+        "total_records": len(df_current_day),
+        "rotation_date": current_date.isoformat(),
         "date_range": {
-            "start": df_full["time"].min(),
-            "end": df_full["time"].max()
+            "start": df_current_day["time"].min(),
+            "end": df_current_day["time"].max()
         },
         "ma_info": {
-            "ma_50_valid_count": int(df_full["ma_50_valid"].sum()),
-            "ma_100_valid_count": int(df_full["ma_100_valid"].sum()),
-            "ma_200_valid_count": int(df_full["ma_200_valid"].sum())
+            "ma_50_valid_count": int(df_current_day["ma_50_valid"].sum()),
+            "ma_100_valid_count": int(df_current_day["ma_100_valid"].sum()),
+            "ma_200_valid_count": int(df_current_day["ma_200_valid"].sum())
         },
         "file_size_mb": round(os.path.getsize(historical_path) / 1024 / 1024, 2),
-        "update_frequency": "hourly"
+        "update_frequency": "hourly, rotated daily"
     }
     
     # Save metadata
@@ -170,8 +246,8 @@ def save_historical_data(df_full):
     with open(metadata_path, "w") as f:
         json.dump(metadata, f, indent=2, default=str)
     
-    print(f"📚 Saved historical.json: {len(df_full)} records ({metadata['file_size_mb']}MB)")
-    return len(df_full)
+    print(f"📚 Saved historical.json: {len(df_current_day)} records for {current_date} ({metadata['file_size_mb']}MB)")
+    return len(df_current_day)
 
 def save_daily_jsons(df_full):
     """Create individual daily JSON files for compatibility"""

@@ -201,7 +201,9 @@ def home():
         ],
         "hybrid_chart_data": [
             "/recent.json - Last 24 hours (fast loading, updated every second)",
-            "/historical.json - Complete dataset (full history, updated hourly)",
+            "/historical.json - Current day's data (rotated daily)",
+            "/historical/<YYYY-MM-DD>.json - Archived historical data for specific date",
+            "/historical-archives - List all available historical archives",
             "/metadata.json - Dataset metadata",
             "/index.json - Data source index"
         ],
@@ -296,12 +298,60 @@ def serve_recent_data():
 
 @app.route("/historical.json")
 def serve_historical_data():
-    """Serve complete historical dataset for full TradingView-style charts"""
+    """Serve current day's historical dataset for full TradingView-style charts"""
     file_path = os.path.join(DATA_FOLDER, "historical.json")
     if os.path.exists(file_path):
         return send_file(file_path, mimetype='application/json')
     else:
         return jsonify({"error": "Historical data not available"}), 404
+
+@app.route("/historical/<date>.json")
+def serve_historical_archive(date):
+    """Serve archived historical data for a specific date (YYYY-MM-DD)"""
+    # Validate date format
+    try:
+        datetime.strptime(date, "%Y-%m-%d")
+    except ValueError:
+        return jsonify({"error": "Invalid date format. Use YYYY-MM-DD"}), 400
+    
+    file_path = os.path.join(DATA_FOLDER, f"historical_{date}.json")
+    if os.path.exists(file_path):
+        return send_file(file_path, mimetype='application/json')
+    else:
+        return jsonify({"error": f"Historical data for {date} not available"}), 404
+
+@app.route("/historical-archives")
+def list_historical_archives():
+    """List all available historical archive files"""
+    try:
+        import glob
+        pattern = os.path.join(DATA_FOLDER, "historical_*.json")
+        archive_files = glob.glob(pattern)
+        
+        archives = []
+        for file_path in sorted(archive_files):
+            filename = os.path.basename(file_path)
+            # Extract date from filename: historical_YYYY-MM-DD.json
+            date_part = filename.replace("historical_", "").replace(".json", "")
+            
+            file_stats = os.stat(file_path)
+            archives.append({
+                "date": date_part,
+                "filename": filename,
+                "url": f"/historical/{date_part}.json",
+                "size_bytes": file_stats.st_size,
+                "size_mb": round(file_stats.st_size / 1024 / 1024, 2),
+                "created": datetime.fromtimestamp(file_stats.st_ctime).isoformat()
+            })
+        
+        return jsonify({
+            "current_historical": "/historical.json",
+            "archives": archives,
+            "archive_count": len(archives)
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/metadata.json")
 def serve_metadata():
