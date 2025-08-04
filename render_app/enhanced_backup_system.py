@@ -151,12 +151,36 @@ class GCSBackupProvider(BackupProvider):
             from google.cloud import storage
             from google.oauth2 import service_account
             
-            if service_account_path or os.getenv('GOOGLE_APPLICATION_CREDENTIALS'):
+            # Try different authentication methods
+            credentials = None
+            
+            # Method 1: JSON string in environment variable (Render-friendly)
+            creds_json = os.getenv('GOOGLE_APPLICATION_CREDENTIALS_JSON')
+            if creds_json:
+                import json
+                try:
+                    creds_dict = json.loads(creds_json)
+                    credentials = service_account.Credentials.from_service_account_info(creds_dict)
+                    logger.info("✅ Using Google Cloud credentials from environment variable")
+                except json.JSONDecodeError as e:
+                    logger.error(f"❌ Invalid JSON in GOOGLE_APPLICATION_CREDENTIALS_JSON: {e}")
+            
+            # Method 2: Service account file path
+            elif service_account_path or os.getenv('GOOGLE_APPLICATION_CREDENTIALS'):
                 creds_path = service_account_path or os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
-                credentials = service_account.Credentials.from_service_account_file(creds_path)
+                if os.path.exists(creds_path):
+                    credentials = service_account.Credentials.from_service_account_file(creds_path)
+                    logger.info(f"✅ Using Google Cloud credentials from file: {creds_path}")
+                else:
+                    logger.warning(f"⚠️ Credentials file not found: {creds_path}")
+            
+            # Initialize client
+            if credentials:
                 self.client = storage.Client(credentials=credentials, project=self.project_id)
             else:
+                # Method 3: Default authentication (for Google Cloud environments)
                 self.client = storage.Client(project=self.project_id)
+                logger.info("✅ Using default Google Cloud authentication")
             
             self.bucket = self.client.bucket(self.bucket_name)
             logger.info(f"✅ GCS backup initialized: {self.bucket_name}")

@@ -26,6 +26,10 @@ data/
 test_backup.txt
 verify_*.json
 
+# Local backup directories
+backup_data/
+btc_backup/
+
 # IDE files
 .vscode/
 .idea/
