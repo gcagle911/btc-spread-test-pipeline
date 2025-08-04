@@ -140,7 +140,7 @@ def should_update_historical():
         return True  # Force update if timestamp check fails
 
 def should_rotate_historical():
-    """Check if we should archive older data (monthly rotation for 1-year dataset)"""
+    """Check if we should archive older data (weekly rotation)"""
     historical_path = os.path.join(DATA_FOLDER, "historical.json")
     
     if not os.path.exists(historical_path):
@@ -150,14 +150,14 @@ def should_rotate_historical():
         file_time = datetime.fromtimestamp(os.path.getmtime(historical_path))
         now = datetime.utcnow()
         
-        # Rotate monthly since we're keeping 1 year of data
-        # This prevents too frequent archiving while managing file size
+        # Rotate weekly to manage file size while preserving data
+        # This keeps historical.json at a reasonable size (~10MB for 30 days)
         days_old = (now - file_time).days
         
-        should_rotate = days_old >= 30  # Monthly rotation
+        should_rotate = days_old >= 7  # Weekly rotation
         
         if should_rotate:
-            print(f"📅 Historical file is {days_old} days old - archiving old data (monthly rotation)!")
+            print(f"📅 Historical file is {days_old} days old - archiving old data (weekly rotation)!")
         
         return should_rotate
         
@@ -198,25 +198,25 @@ def save_historical_data(df_full):
     if df_full is None or df_full.empty:
         return
     
-    # Archive old data first if needed (still weekly rotation)
+    # Archive old data first if needed (weekly rotation)
     if should_rotate_historical():
         rotate_historical_file()
     
     now = datetime.utcnow()
     
-    # Strategy: Keep last 365 days (1 year) in historical.json for extensive chart history
-    # This allows charts to display long-term trends while managing file size reasonably
-    cutoff_time = now - timedelta(days=365)
+    # Strategy: Keep last 30 days in historical.json for good chart context
+    # This balances file size (~10MB) with useful historical perspective
+    cutoff_time = now - timedelta(days=30)
     
     # Convert time column to datetime if it's a string
     if df_full['time'].dtype == 'object':
         df_full['time'] = pd.to_datetime(df_full['time'])
     
-    # Filter to last 365 days for historical.json
+    # Filter to last 30 days for historical.json
     df_chart_optimized = df_full[df_full['time'] >= cutoff_time].copy()
     
     if df_chart_optimized.empty:
-        print(f"ℹ️ No data in last 365 days, using all available data")
+        print(f"ℹ️ No data in last 30 days, using all available data")
         df_chart_optimized = df_full.copy()
     
     historical_path = os.path.join(DATA_FOLDER, "historical.json")
@@ -228,20 +228,20 @@ def save_historical_data(df_full):
         # Add metadata for charts
         metadata = {
             "generated_at": now.isoformat(),
-            "data_range_days": 365,
+            "data_range_days": 30,
             "total_records": len(records),
             "data_type": "1-minute OHLC with moving averages",
             "update_frequency": "hourly, optimized for charts",
             "first_timestamp": records[0]['time'] if records else None,
             "last_timestamp": records[-1]['time'] if records else None,
-            "description": "1-year historical data optimized for long-term chart display"
+            "description": "30-day historical data optimized for chart performance"
         }
         
         # Save the data
         with open(historical_path, 'w') as f:
             json.dump(records, f, separators=(',', ':'))  # Compact format
         
-        print(f"✅ Historical data saved: {len(records)} records (365-day window)")
+        print(f"✅ Historical data saved: {len(records)} records (30-day window)")
         print(f"📊 Data range: {metadata['first_timestamp']} to {metadata['last_timestamp']}")
         
         # Also save metadata separately
@@ -362,11 +362,11 @@ def process_csv_to_json():
     
     print("✅ Hybrid processing complete!")
     print(f"⚡ Recent data: {recent_count} records (updated every second)")
-    print(f"📚 Historical data: {historical_count} records (365-day window, updated hourly)")
+    print(f"📚 Historical data: {historical_count} records (30-day window, updated hourly)")
     print("🔄 Charts can use:")
     print("   - /recent.json for fast startup (24 hours)")
-    print("   - /historical.json for long-term data (1 year)")
-    print("   - /historical-combined for maximum range (all data)")
+    print("   - /historical.json for medium-term data (30 days)")
+    print("   - /historical-combined for maximum range (all archived data)")
 
 # Legacy function for compatibility
 def process_today_only():

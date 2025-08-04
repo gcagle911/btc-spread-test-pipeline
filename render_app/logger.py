@@ -202,7 +202,7 @@ def home():
         ],
         "hybrid_chart_data": [
             "/recent.json - Last 24 hours (fast loading, updated every second)",
-            "/historical.json - Last 365 days (1-year chart data, updated hourly)",
+            "/historical.json - Last 30 days (chart-optimized, updated hourly)",
 "/historical-combined - All available data (current + archives, maximum range)",
             "/historical/<YYYY-MM-DD>.json - Archived historical data for specific date",
             "/historical-archives - List all available historical archives",
