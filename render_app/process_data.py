@@ -11,20 +11,40 @@ import glob
 DATA_FOLDER = "render_app/data"
 
 def load_all_historical_data():
-    """Load and combine all CSV files into a single chronological dataset"""
+    """Load and combine current CSV files into a chronological dataset"""
     print(f"🔍 Looking for CSV files in: {DATA_FOLDER}")
-    csv_files = glob.glob(os.path.join(DATA_FOLDER, "*.csv"))
+    
+    # Get today's date to only load current data
+    from datetime import datetime
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    print(f"📅 Only loading current data for: {today}")
+    
+    # Only look for today's CSV file to avoid old data contamination
+    current_csv_pattern = os.path.join(DATA_FOLDER, f"{today}*.csv")
+    csv_files = glob.glob(current_csv_pattern)
+    
+    # If no current file exists, look for the most recent CSV file
+    if not csv_files:
+        print(f"⚠️ No CSV file found for {today}, looking for most recent file...")
+        all_csv_files = glob.glob(os.path.join(DATA_FOLDER, "*.csv"))
+        if all_csv_files:
+            # Get the most recently modified CSV file
+            csv_files = [max(all_csv_files, key=os.path.getmtime)]
+            print(f"📄 Using most recent file: {os.path.basename(csv_files[0])}")
+        else:
+            print("❌ No CSV files found at all")
+            return None
     
     if not csv_files:
-        print("❌ No CSV files found")
-        print(f"🔍 Checked path: {os.path.join(DATA_FOLDER, '*.csv')}")
+        print("❌ No current CSV files found")
+        print(f"🔍 Checked pattern: {current_csv_pattern}")
         print(f"🔍 Directory exists: {os.path.exists(DATA_FOLDER)}")
         if os.path.exists(DATA_FOLDER):
             all_files = os.listdir(DATA_FOLDER)
             print(f"🔍 All files in directory: {all_files}")
         return None
     
-    print(f"📁 Found {len(csv_files)} CSV files:")
+    print(f"📁 Found {len(csv_files)} current CSV files:")
     for csv_file in sorted(csv_files):
         file_size = os.path.getsize(csv_file) if os.path.exists(csv_file) else 0
         print(f"   📄 {os.path.basename(csv_file)} ({file_size} bytes)")
