@@ -3,7 +3,7 @@
     "recent": {
       "file": "recent.json",
       "description": "Last 24 hours (fast loading)",
-      "records": 0,
+      "records": 3,
       "update_frequency": "every_second"
     },
     "historical": {
@@ -15,17 +15,20 @@
     "longterm": {
       "file": "longterm.json",
       "description": "Compressed hourly data (long-term trends)",
-      "records": 0,
+      "records": 2,
       "update_frequency": "hourly",
       "compression": "60:1 from minute data"
     }
   },
-  "daily_files": [],
+  "daily_files": [
+    "output_2025-07-06.json",
+    "output_2025-07-14.json"
+  ],
   "recommended_usage": {
     "fast_chart_startup": "Load /recent.json first",
     "medium_term_view": "Load /historical.json for 30-day data",
     "long_term_trends": "Load /longterm.json for compact historical view",
     "hybrid_approach": "Load recent first, then historical/longterm as needed"
   },
-  "last_updated": "2025-08-05T01:51:25.019416"
+  "last_updated": "2025-08-05T02:01:23.176586"
 }

@@ -1,15 +1,10 @@
 {
-  "generated_at": "2025-07-29T01:13:54.441720",
-  "total_records": 20,
-  "date_range": {
-    "start": "2025-07-06 00:00:00",
-    "end": "2025-07-29 01:08:00"
-  },
-  "ma_info": {
-    "ma_50_valid_count": 0,
-    "ma_100_valid_count": 0,
-    "ma_200_valid_count": 0
-  },
-  "file_size_mb": 0.0,
-  "update_frequency": "hourly"
+  "generated_at": "2025-08-05T02:01:23.169697",
+  "data_range_days": 30,
+  "total_records": 2,
+  "data_type": "1-minute OHLC with moving averages",
+  "update_frequency": "hourly, optimized for charts",
+  "first_timestamp": "2025-07-14T21:02:00",
+  "last_timestamp": "2025-07-14T21:03:00",
+  "description": "30-day historical data optimized for chart performance"
 }

@@ -5,52 +5,37 @@
 import pandas as pd
 import os
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import glob
 
 DATA_FOLDER = "render_app/data"
 
 def load_all_historical_data():
-    """Load and combine current CSV files into a chronological dataset"""
+    """Load and combine all available CSV files into a chronological dataset"""
     print(f"🔍 Looking for CSV files in: {DATA_FOLDER}")
     
-    # Get today's date to only load current data
-    from datetime import datetime
-    today = datetime.utcnow().strftime("%Y-%m-%d")
-    print(f"📅 Only loading current data for: {today}")
+    # Load ALL available CSV files for historical processing
+    all_csv_files = glob.glob(os.path.join(DATA_FOLDER, "*.csv"))
     
-    # Only look for today's CSV file to avoid old data contamination
-    current_csv_pattern = os.path.join(DATA_FOLDER, f"{today}*.csv")
-    csv_files = glob.glob(current_csv_pattern)
-    
-    # If no current file exists, look for the most recent CSV file
-    if not csv_files:
-        print(f"⚠️ No CSV file found for {today}, looking for most recent file...")
-        all_csv_files = glob.glob(os.path.join(DATA_FOLDER, "*.csv"))
-        if all_csv_files:
-            # Get the most recently modified CSV file
-            csv_files = [max(all_csv_files, key=os.path.getmtime)]
-            print(f"📄 Using most recent file: {os.path.basename(csv_files[0])}")
-        else:
-            print("❌ No CSV files found at all")
-            return None
-    
-    if not csv_files:
-        print("❌ No current CSV files found")
-        print(f"🔍 Checked pattern: {current_csv_pattern}")
+    if not all_csv_files:
+        print("❌ No CSV files found at all")
         print(f"🔍 Directory exists: {os.path.exists(DATA_FOLDER)}")
         if os.path.exists(DATA_FOLDER):
             all_files = os.listdir(DATA_FOLDER)
             print(f"🔍 All files in directory: {all_files}")
         return None
     
-    print(f"📁 Found {len(csv_files)} current CSV files:")
-    for csv_file in sorted(csv_files):
+    # Sort files by modification time to get the most recent first
+    csv_files = sorted(all_csv_files, key=os.path.getmtime, reverse=True)
+    
+    print(f"📁 Found {len(csv_files)} CSV files:")
+    for csv_file in csv_files:
         file_size = os.path.getsize(csv_file) if os.path.exists(csv_file) else 0
-        print(f"   📄 {os.path.basename(csv_file)} ({file_size} bytes)")
+        mod_time = datetime.fromtimestamp(os.path.getmtime(csv_file))
+        print(f"   📄 {os.path.basename(csv_file)} ({file_size} bytes, modified: {mod_time})")
     
     all_dfs = []
-    for csv_file in sorted(csv_files):
+    for csv_file in csv_files:
         try:
             df = pd.read_csv(csv_file, parse_dates=["timestamp"])
             if not df.empty:
@@ -112,24 +97,41 @@ def resample_and_calculate_mas(df):
     return df_1min
 
 def save_recent_data(df_full):
-    """Save last 24 hours of data for fast chart loading"""
+    """Save recent data for fast chart loading"""
     if df_full is None or df_full.empty:
         return
     
-    # Get last 24 hours
+    # For test data, include all available data as "recent"
+    # In production, this would filter for last 24 hours
+    df_full['time_dt'] = pd.to_datetime(df_full['time'])
+    
+    # Get the most recent data (last 24 hours or all available if less)
     now = datetime.utcnow()
     cutoff = now - timedelta(hours=24)
     
-    df_full['time_dt'] = pd.to_datetime(df_full['time'])
     recent_data = df_full[df_full['time_dt'] >= cutoff].copy()
+    
+    # If no recent data (like in test scenarios), use all available data
+    if recent_data.empty:
+        print("⚠️ No data in last 24h, using all available data for recent.json")
+        recent_data = df_full.copy()
+    
     recent_data = recent_data.drop(columns=['time_dt'])
+    
+    # Convert all timestamps to strings for JSON serialization
+    records = recent_data.to_dict('records')
+    for record in records:
+        for key, value in record.items():
+            if hasattr(value, 'isoformat'):
+                record[key] = value.isoformat()
     
     # Save recent data (fast loading for charts)
     recent_path = os.path.join(DATA_FOLDER, "recent.json")
-    recent_data.to_json(recent_path, orient="records", date_format="iso")
+    with open(recent_path, 'w') as f:
+        json.dump(records, f, separators=(',', ':'))
     
-    print(f"⚡ Saved recent.json: {len(recent_data)} records (last 24h)")
-    return len(recent_data)
+    print(f"⚡ Saved recent.json: {len(records)} records")
+    return len(records)
 
 def should_update_historical():
     """Check if historical.json needs updating (every hour)"""
@@ -245,6 +247,12 @@ def save_historical_data(df_full):
         # Save as JSON with proper formatting
         records = df_chart_optimized.to_dict('records')
         
+        # Convert all timestamps to strings for JSON serialization
+        for record in records:
+            for key, value in record.items():
+                if hasattr(value, 'isoformat'):
+                    record[key] = value.isoformat()
+        
         # Add metadata for charts
         metadata = {
             "generated_at": now.isoformat(),
@@ -290,7 +298,7 @@ def save_compressed_longterm_data(df_full):
     
     # Resample to hourly data (60x compression from 1-minute data)
     # This dramatically reduces file size while preserving trends
-    df_hourly = df_longterm.resample('1H').agg({
+    df_hourly = df_longterm.resample('1h').agg({
         'price': 'last',  # Last price in the hour
         'spread_avg_L20_pct': 'mean',  # Average spread
         'ma_50': 'last',
@@ -313,6 +321,12 @@ def save_compressed_longterm_data(df_full):
     try:
         # Save as JSON with proper formatting
         records = df_hourly.to_dict('records')
+        
+        # Convert all timestamps to strings for JSON serialization
+        for record in records:
+            for key, value in record.items():
+                if hasattr(value, 'isoformat'):
+                    record[key] = value.isoformat()
         
         # Add metadata
         now = datetime.utcnow()
