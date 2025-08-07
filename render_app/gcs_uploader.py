@@ -3,7 +3,7 @@
 Google Cloud Storage Uploader for BTC Chart Data
 ================================================
 
-This module provides a simple function to upload JSON and CSV files to Google Cloud Storage.
+This module provides simple functions to upload and download JSON and CSV files to/from Google Cloud Storage.
 It uses environment variables for authentication and configuration.
 """
 
@@ -16,6 +16,40 @@ import logging
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+def get_gcs_client():
+    """
+    Get GCS client with proper authentication
+    
+    Returns:
+        tuple: (client, bucket) or (None, None) if authentication fails
+    """
+    try:
+        # Get credentials from environment variable
+        credentials_json = os.getenv('GOOGLE_APPLICATION_CREDENTIALS_JSON')
+        if not credentials_json:
+            logger.error("❌ GOOGLE_APPLICATION_CREDENTIALS_JSON environment variable not set")
+            return None, None
+        
+        # Parse credentials JSON
+        try:
+            credentials_info = json.loads(credentials_json)
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ Invalid JSON in GOOGLE_APPLICATION_CREDENTIALS_JSON: {e}")
+            return None, None
+        
+        # Create credentials object
+        credentials = service_account.Credentials.from_service_account_info(credentials_info)
+        
+        # Initialize GCS client
+        client = storage.Client(credentials=credentials)
+        bucket = client.bucket("garrettc-btc-bidspreadl20-data")
+        
+        return client, bucket
+        
+    except Exception as e:
+        logger.error(f"❌ GCS client initialization failed: {e}")
+        return None, None
 
 def upload_to_gcs(local_path, gcs_path, bucket_name="garrettc-btc-bidspreadl20-data", content_type=None, public=False):
     """
@@ -37,25 +71,10 @@ def upload_to_gcs(local_path, gcs_path, bucket_name="garrettc-btc-bidspreadl20-d
             logger.error(f"❌ File not found: {local_path}")
             return False
         
-        # Get credentials from environment variable
-        credentials_json = os.getenv('GOOGLE_APPLICATION_CREDENTIALS_JSON')
-        if not credentials_json:
-            logger.error("❌ GOOGLE_APPLICATION_CREDENTIALS_JSON environment variable not set")
+        # Get GCS client
+        client, bucket = get_gcs_client()
+        if not client or not bucket:
             return False
-        
-        # Parse credentials JSON
-        try:
-            credentials_info = json.loads(credentials_json)
-        except json.JSONDecodeError as e:
-            logger.error(f"❌ Invalid JSON in GOOGLE_APPLICATION_CREDENTIALS_JSON: {e}")
-            return False
-        
-        # Create credentials object
-        credentials = service_account.Credentials.from_service_account_info(credentials_info)
-        
-        # Initialize GCS client
-        client = storage.Client(credentials=credentials)
-        bucket = client.bucket(bucket_name)
         
         # Create blob and upload
         blob = bucket.blob(gcs_path)
@@ -73,4 +92,43 @@ def upload_to_gcs(local_path, gcs_path, bucket_name="garrettc-btc-bidspreadl20-d
         
     except Exception as e:
         logger.error(f"❌ Upload failed for {local_path}: {e}")
+        return False
+
+def download_from_gcs(gcs_path, local_path, bucket_name="garrettc-btc-bidspreadl20-data"):
+    """
+    Download a file from Google Cloud Storage
+    
+    Args:
+        gcs_path (str): GCS source path (e.g., "archive/1min/2025-08-07.json")
+        local_path (str): Local destination path
+        bucket_name (str): GCS bucket name (default: "garrettc-btc-bidspreadl20-data")
+    
+    Returns:
+        bool: True if download successful, False otherwise
+    """
+    try:
+        # Get GCS client
+        client, bucket = get_gcs_client()
+        if not client or not bucket:
+            return False
+        
+        # Create blob and download
+        blob = bucket.blob(gcs_path)
+        
+        # Check if blob exists
+        if not blob.exists():
+            logger.info(f"ℹ️ File not found in GCS: gs://{bucket_name}/{gcs_path}")
+            return False
+        
+        # Ensure local directory exists
+        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+        
+        # Download file
+        blob.download_to_filename(local_path)
+        
+        logger.info(f"✅ Downloaded gs://{bucket_name}/{gcs_path} to {local_path}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Download failed for gs://{bucket_name}/{gcs_path}: {e}")
         return False

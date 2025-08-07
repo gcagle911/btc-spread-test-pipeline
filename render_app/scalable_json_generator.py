@@ -207,6 +207,13 @@ def generate_daily_archives(df_1min):
         logger.warning("⚠️ No data available for daily archives")
         return []
     
+    # Import download function
+    try:
+        from gcs_uploader import download_from_gcs
+    except ImportError:
+        logger.warning("⚠️ GCS download not available - will create new archive files")
+        download_from_gcs = None
+    
     # Group by date
     df_1min['date'] = pd.to_datetime(df_1min['time']).dt.date
     daily_files = []
@@ -219,17 +226,65 @@ def generate_daily_archives(df_1min):
         date_str = date.strftime("%Y-%m-%d")
         filename = f"{date_str}.json"
         file_path = os.path.join(ARCHIVE_FOLDER, filename)
+        gcs_path = f"archive/1min/{filename}"
+        
+        # Check if file exists locally or in GCS
+        existing_data = None
+        
+        # First check local file
+        if os.path.exists(file_path):
+            try:
+                logger.info(f"📄 Loading existing local archive: {filename}")
+                existing_data = pd.read_json(file_path, orient="records")
+                logger.info(f"✅ Loaded {len(existing_data)} existing records from local {filename}")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to load local {filename}: {e}")
+                existing_data = None
+        
+        # If no local file, try to download from GCS
+        elif download_from_gcs and GCS_AVAILABLE:
+            try:
+                logger.info(f"📄 Downloading existing archive from GCS: {filename}")
+                if download_from_gcs(gcs_path, file_path):
+                    existing_data = pd.read_json(file_path, orient="records")
+                    logger.info(f"✅ Downloaded and loaded {len(existing_data)} existing records from GCS {filename}")
+                else:
+                    logger.info(f"ℹ️ No existing archive found in GCS: {filename}")
+                    existing_data = None
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to download {filename} from GCS: {e}")
+                existing_data = None
+        
+        # Combine existing and new data
+        if existing_data is not None and not existing_data.empty:
+            # Convert timestamps to datetime for proper merging
+            existing_data['time_dt'] = pd.to_datetime(existing_data['time']).dt.tz_localize(None)
+            day_data_clean['time_dt'] = pd.to_datetime(day_data_clean['time']).dt.tz_localize(None)
+            
+            # Remove duplicates based on timestamp
+            combined_data = pd.concat([existing_data, day_data_clean], ignore_index=True)
+            combined_data = combined_data.drop_duplicates(subset=['time_dt'], keep='last')
+            
+            # Sort by timestamp
+            combined_data = combined_data.sort_values('time_dt')
+            
+            # Remove temporary time_dt column
+            combined_data = combined_data.drop(columns=['time_dt'])
+            
+            logger.info(f"🔄 Merged {len(existing_data)} existing + {len(day_data_clean)} new = {len(combined_data)} total records for {filename}")
+        else:
+            combined_data = day_data_clean
+            logger.info(f"🆕 Creating new archive: {filename} with {len(combined_data)} records")
         
         # Save daily archive locally
-        day_data_clean.to_json(file_path, orient="records", date_format="iso")
+        combined_data.to_json(file_path, orient="records", date_format="iso")
         daily_files.append(filename)
         
-        logger.info(f"📅 Generated daily archive: {filename} ({len(day_data_clean)} records)")
+        logger.info(f"📅 Generated daily archive: {filename} ({len(combined_data)} records)")
         
         # Upload to GCS
         if GCS_AVAILABLE:
             try:
-                gcs_path = f"archive/1min/{filename}"
                 if upload_to_gcs(file_path, gcs_path, content_type="application/json"):
                     logger.info(f"✅ Uploaded {filename} to GCS")
                 else:
