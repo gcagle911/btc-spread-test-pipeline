@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 # Constants
 DATA_FOLDER = "render_app/data"
 ARCHIVE_FOLDER = os.path.join(DATA_FOLDER, "archive", "1min")
-RECENT_HOURS = 10  # 10 hours of recent data (configurable 8-12)
+RECENT_HOURS = 48  # 48 hours (2 days) of recent data
 
 def ensure_directories():
     """Ensure all required directories exist"""
@@ -164,7 +164,7 @@ def resample_to_10min(df):
     return df_10min
 
 def generate_recent_json(df_1min):
-    """Generate recent.json with last 8-12 hours of 1-minute data"""
+    """Generate recent.json with last 2 days of 1-minute data"""
     if df_1min is None or df_1min.empty:
         logger.warning("⚠️ No data available for recent.json")
         return 0
@@ -177,7 +177,7 @@ def generate_recent_json(df_1min):
         download_from_gcs = None
     
     # Constants for recent.json
-    RECENT_JSON_LIMIT = 120  # Keep last 120 entries (2 hours of 1-minute data)
+    RECENT_JSON_LIMIT = 2880  # Keep last 2,880 entries (2 days of 1-minute data)
     recent_path = os.path.join(DATA_FOLDER, "recent.json")
     gcs_path = "recent.json"
     
