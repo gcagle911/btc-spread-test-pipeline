@@ -17,14 +17,14 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def upload_to_gcs(local_path, gcs_path, bucket_name="btc-chart-data"):
+def upload_to_gcs(local_path, gcs_path, bucket_name="garrettc-btc-bidspreadl20-data"):
     """
     Upload a file to Google Cloud Storage
     
     Args:
         local_path (str): Local file path to upload
         gcs_path (str): GCS destination path (e.g., "recent.json", "archive/1min/2025-08-07.json")
-        bucket_name (str): GCS bucket name (default: "btc-chart-data")
+        bucket_name (str): GCS bucket name (default: "garrettc-btc-bidspreadl20-data")
     
     Returns:
         bool: True if upload successful, False otherwise
