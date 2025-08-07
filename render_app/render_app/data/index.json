@@ -3,25 +3,26 @@
     "recent": {
       "file": "recent.json",
       "description": "Last 24 hours (fast loading)",
-      "records": 3,
+      "records": 6,
       "update_frequency": "every_second"
     },
     "historical": {
       "file": "historical.json",
       "description": "Complete dataset (full history)",
-      "records": 6,
+      "records": 12,
       "update_frequency": "hourly"
     }
   },
   "daily_files": [
     "output_2025-07-06.json",
     "output_2025-07-14.json",
-    "output_2025-08-05.json"
+    "output_2025-08-05.json",
+    "output_2025-08-07.json"
   ],
   "recommended_usage": {
     "fast_chart_startup": "Load /recent.json first",
     "full_historical_view": "Load /historical.json for complete data",
     "hybrid_approach": "Load recent first, then historical in background"
   },
-  "last_updated": "2025-08-05T03:05:05.522448"
+  "last_updated": "2025-08-07T02:56:30.991507"
 }

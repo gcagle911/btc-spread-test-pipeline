@@ -19,7 +19,7 @@ import pandas as pd
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from logger import app, log_data
-from process_data import process_csv_to_json
+from scalable_json_generator import generate_all_jsons
 
 DATA_FOLDER = "render_app/data"
 
@@ -90,11 +90,11 @@ def test_data_processing():
     """Test the data processing pipeline"""
     print("🧪 Testing data processing pipeline...")
     try:
-        process_csv_to_json()
+        generate_all_jsons()
         print("✅ Data processing completed successfully!")
         
         # Check generated files
-        files_to_check = ['recent.json', 'historical.json', 'metadata.json', 'index.json']
+        files_to_check = ['recent.json', 'historical.json', 'index.json']
         for filename in files_to_check:
             filepath = os.path.join(DATA_FOLDER, filename)
             if os.path.exists(filepath):
@@ -102,6 +102,14 @@ def test_data_processing():
                 print(f"📄 {filename}: {file_size:,} bytes")
             else:
                 print(f"❌ Missing: {filename}")
+        
+        # Check archive directory
+        archive_dir = os.path.join(DATA_FOLDER, "archive", "1min")
+        if os.path.exists(archive_dir):
+            archive_files = os.listdir(archive_dir)
+            print(f"📁 archive/1min/: {len(archive_files)} daily archive files")
+        else:
+            print("❌ Missing: archive/1min/ directory")
                 
     except Exception as e:
         print(f"❌ Data processing failed: {e}")
