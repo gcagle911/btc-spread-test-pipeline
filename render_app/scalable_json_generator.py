@@ -8,7 +8,7 @@ This module generates three types of JSON files from NEW incoming data:
 2. archive/1min/YYYY-MM-DD.json - Daily 1-minute candles (1440 per file)
 3. historical.json - Long-term 1-hour candles
 
-All files are saved locally first, ready for GCS upload later.
+All files are saved locally first, then uploaded to Google Cloud Storage.
 """
 
 import pandas as pd
@@ -17,6 +17,14 @@ import json
 from datetime import datetime, timedelta, timezone
 import glob
 import logging
+
+# Import GCS uploader
+try:
+    from gcs_uploader import upload_to_gcs
+    GCS_AVAILABLE = True
+except ImportError:
+    GCS_AVAILABLE = False
+    logging.warning("⚠️ GCS uploader not available - files will only be saved locally")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -175,11 +183,22 @@ def generate_recent_json(df_1min):
         logger.warning(f"⚠️ No data in last {RECENT_HOURS} hours, using all available data")
         recent_data = df_1min.copy()
     
-    # Save recent.json
+    # Save recent.json locally
     recent_path = os.path.join(DATA_FOLDER, "recent.json")
     recent_data.to_json(recent_path, orient="records", date_format="iso")
     
     logger.info(f"⚡ Generated recent.json: {len(recent_data)} records (last {RECENT_HOURS} hours)")
+    
+    # Upload to GCS
+    if GCS_AVAILABLE:
+        try:
+            if upload_to_gcs(recent_path, "recent.json"):
+                logger.info("✅ Uploaded recent.json to GCS")
+            else:
+                logger.warning("⚠️ Failed to upload recent.json to GCS")
+        except Exception as e:
+            logger.error(f"❌ GCS upload error for recent.json: {e}")
+    
     return len(recent_data)
 
 def generate_daily_archives(df_1min):
@@ -201,11 +220,22 @@ def generate_daily_archives(df_1min):
         filename = f"{date_str}.json"
         file_path = os.path.join(ARCHIVE_FOLDER, filename)
         
-        # Save daily archive
+        # Save daily archive locally
         day_data_clean.to_json(file_path, orient="records", date_format="iso")
         daily_files.append(filename)
         
         logger.info(f"📅 Generated daily archive: {filename} ({len(day_data_clean)} records)")
+        
+        # Upload to GCS
+        if GCS_AVAILABLE:
+            try:
+                gcs_path = f"archive/1min/{filename}"
+                if upload_to_gcs(file_path, gcs_path):
+                    logger.info(f"✅ Uploaded {filename} to GCS")
+                else:
+                    logger.warning(f"⚠️ Failed to upload {filename} to GCS")
+            except Exception as e:
+                logger.error(f"❌ GCS upload error for {filename}: {e}")
     
     logger.info(f"✅ Generated {len(daily_files)} daily archive files")
     return daily_files
@@ -216,11 +246,22 @@ def generate_historical_json(df_1hour):
         logger.warning("⚠️ No data available for historical.json")
         return 0
     
-    # Save historical.json
+    # Save historical.json locally
     historical_path = os.path.join(DATA_FOLDER, "historical.json")
     df_1hour.to_json(historical_path, orient="records", date_format="iso")
     
     logger.info(f"📚 Generated historical.json: {len(df_1hour)} records (1-hour candles)")
+    
+    # Upload to GCS
+    if GCS_AVAILABLE:
+        try:
+            if upload_to_gcs(historical_path, "historical.json"):
+                logger.info("✅ Uploaded historical.json to GCS")
+            else:
+                logger.warning("⚠️ Failed to upload historical.json to GCS")
+        except Exception as e:
+            logger.error(f"❌ GCS upload error for historical.json: {e}")
+    
     return len(df_1hour)
 
 def generate_index_json(recent_count, historical_count, daily_files):
