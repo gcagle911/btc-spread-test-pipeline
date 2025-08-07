@@ -3,7 +3,7 @@
 Scalable JSON Generation System for BTC Data
 ============================================
 
-This module generates three types of JSON files:
+This module generates three types of JSON files from NEW incoming data:
 1. recent.json - Rolling 8-12 hours of 1-minute data
 2. archive/1min/YYYY-MM-DD.json - Daily 1-minute candles (1440 per file)
 3. historical.json - Long-term 1-hour candles
@@ -33,29 +33,56 @@ def ensure_directories():
     os.makedirs(ARCHIVE_FOLDER, exist_ok=True)
     logger.info(f"✅ Directories ensured: {DATA_FOLDER}, {ARCHIVE_FOLDER}")
 
-def load_all_csv_data():
-    """Load and combine all CSV files into a single chronological dataset"""
-    logger.info(f"🔍 Loading CSV files from: {DATA_FOLDER}")
+def load_recent_csv_data(hours_back=24):
+    """Load only recent CSV files (last 24 hours by default)"""
+    logger.info(f"🔍 Loading recent CSV files from: {DATA_FOLDER}")
+    
+    # Get current time and calculate cutoff
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(hours=hours_back)
     
     csv_files = glob.glob(os.path.join(DATA_FOLDER, "*.csv"))
     if not csv_files:
         logger.warning("❌ No CSV files found")
         return None
     
-    logger.info(f"📁 Found {len(csv_files)} CSV files")
+    # Filter for recent files only
+    recent_files = []
+    for csv_file in sorted(csv_files):
+        try:
+            # Check file modification time
+            file_mtime = datetime.fromtimestamp(os.path.getmtime(csv_file), tz=timezone.utc)
+            if file_mtime >= cutoff:
+                recent_files.append(csv_file)
+                logger.info(f"✅ Recent file: {os.path.basename(csv_file)} (modified: {file_mtime})")
+            else:
+                logger.info(f"⏭️ Skipping old file: {os.path.basename(csv_file)} (modified: {file_mtime})")
+        except Exception as e:
+            logger.error(f"❌ Error checking {csv_file}: {e}")
+    
+    if not recent_files:
+        logger.warning("❌ No recent CSV files found")
+        return None
+    
+    logger.info(f"📁 Found {len(recent_files)} recent CSV files")
     
     all_dfs = []
-    for csv_file in sorted(csv_files):
+    for csv_file in recent_files:
         try:
             df = pd.read_csv(csv_file, parse_dates=["timestamp"])
             if not df.empty:
-                all_dfs.append(df)
-                logger.info(f"✅ Loaded: {os.path.basename(csv_file)} ({len(df)} rows)")
+                # Filter for recent data within the file - ensure timezone awareness
+                df['timestamp_dt'] = pd.to_datetime(df['timestamp']).dt.tz_localize(None)
+                recent_data = df[df['timestamp_dt'] >= cutoff.replace(tzinfo=None)].copy()
+                if not recent_data.empty:
+                    recent_data = recent_data.drop(columns=['timestamp_dt'])
+                    all_dfs.append(recent_data)
+                    logger.info(f"✅ Loaded recent data: {os.path.basename(csv_file)} ({len(recent_data)} rows)")
         except Exception as e:
             logger.error(f"❌ Error loading {csv_file}: {e}")
     
     if not all_dfs:
-        logger.error("❌ No valid data found")
+        logger.error("❌ No valid recent data found")
         return None
     
     # Combine all data and sort chronologically
@@ -63,7 +90,7 @@ def load_all_csv_data():
     combined_df = combined_df.sort_values("timestamp")
     combined_df = combined_df.drop_duplicates(subset=["timestamp"], keep="last")
     
-    logger.info(f"✅ Combined dataset: {len(combined_df)} total rows")
+    logger.info(f"✅ Combined recent dataset: {len(combined_df)} total rows")
     return combined_df
 
 def resample_to_1min(df):
@@ -236,16 +263,16 @@ def generate_index_json(recent_count, historical_count, daily_files):
     return index_data
 
 def generate_all_jsons():
-    """Main function to generate all JSON files"""
-    logger.info("🚀 Starting scalable JSON generation...")
+    """Main function to generate all JSON files from recent data only"""
+    logger.info("🚀 Starting scalable JSON generation (recent data only)...")
     
     # Ensure directories exist
     ensure_directories()
     
-    # Load all CSV data
-    df_raw = load_all_csv_data()
+    # Load recent CSV data (last 24 hours)
+    df_raw = load_recent_csv_data(hours_back=24)
     if df_raw is None:
-        logger.error("❌ No data to process")
+        logger.error("❌ No recent data to process")
         return False
     
     # Resample to 1-minute intervals
@@ -266,7 +293,7 @@ def generate_all_jsons():
     historical_count = generate_historical_json(df_1hour)
     index_data = generate_index_json(recent_count, historical_count, daily_files)
     
-    logger.info("✅ Scalable JSON generation completed!")
+    logger.info("✅ Scalable JSON generation completed (recent data only)!")
     logger.info(f"📊 Summary:")
     logger.info(f"   • recent.json: {recent_count} records")
     logger.info(f"   • historical.json: {historical_count} records") 

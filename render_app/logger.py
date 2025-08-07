@@ -1,9 +1,10 @@
 # BTC Logger - Enhanced for Historical Data Support
 # Updated: 2025-07-10 - Added hybrid data endpoints and improved debugging
 # Updated: 2025-07-10 - Added Google Cloud Storage auto-backup functionality
+# Updated: 2025-08-07 - Integrated scalable JSON generation system
 
 from flask_cors import CORS
-from process_data import process_csv_to_json
+from scalable_json_generator import generate_all_jsons
 from gcs_backup import auto_backup_data, backup_file, get_gcs_backup
 import requests
 import csv
@@ -30,6 +31,10 @@ os.makedirs(DATA_FOLDER, exist_ok=True)
 BACKUP_ENABLED = os.getenv('GCS_BACKUP_ENABLED', 'true').lower() in ['true', '1', 'yes']
 BACKUP_INTERVAL_MINUTES = int(os.getenv('BACKUP_INTERVAL_MINUTES', '30'))  # Backup every 30 minutes by default
 last_backup_time = {"timestamp": None}
+
+# JSON generation configuration
+JSON_UPDATE_INTERVAL = 60  # Update JSONs every 60 seconds
+last_json_update = {"timestamp": None}
 
 # 🔁 Rotates files every 8 hours (00, 08, 16 UTC)
 def get_current_csv_filename():
@@ -95,8 +100,18 @@ def log_data():
             last_logged["timestamp"] = data["timestamp"]
             print(f"[{data['timestamp']}] ✅ Logged to {filename}")
 
-            # Run comprehensive JSON generation with full historical context
-            process_csv_to_json()
+            # Check if JSON update is needed (every 60 seconds)
+            current_time = datetime.now(UTC)
+            if (last_json_update["timestamp"] is None or 
+                (current_time - last_json_update["timestamp"]).total_seconds() >= JSON_UPDATE_INTERVAL):
+                
+                try:
+                    print("🔄 Updating JSON files with new data...")
+                    generate_all_jsons()
+                    last_json_update["timestamp"] = current_time
+                    print("✅ JSON files updated successfully")
+                except Exception as e:
+                    print(f"❌ JSON generation error: {e}")
             
             # Check if backup is needed
             check_and_backup_data()

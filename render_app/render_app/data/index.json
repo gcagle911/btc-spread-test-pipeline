@@ -1,28 +1,30 @@
 {
+  "generated_at": "2025-08-07T03:00:52.162269+00:00",
   "data_sources": {
     "recent": {
       "file": "recent.json",
-      "description": "Last 24 hours (fast loading)",
+      "description": "Last 10 hours of 1-minute data",
       "records": 6,
-      "update_frequency": "every_second"
+      "update_frequency": "every_minute"
     },
     "historical": {
       "file": "historical.json",
-      "description": "Complete dataset (full history)",
-      "records": 12,
+      "description": "Complete dataset with 1-hour candles",
+      "records": 1,
       "update_frequency": "hourly"
+    },
+    "daily_archives": {
+      "folder": "archive/1min/",
+      "description": "Daily 1-minute candle archives",
+      "files": [
+        "2025-08-07.json"
+      ],
+      "format": "YYYY-MM-DD.json"
     }
   },
-  "daily_files": [
-    "output_2025-07-06.json",
-    "output_2025-07-14.json",
-    "output_2025-08-05.json",
-    "output_2025-08-07.json"
-  ],
-  "recommended_usage": {
-    "fast_chart_startup": "Load /recent.json first",
-    "full_historical_view": "Load /historical.json for complete data",
-    "hybrid_approach": "Load recent first, then historical in background"
-  },
-  "last_updated": "2025-08-07T02:56:30.991507"
+  "file_structure": {
+    "recent.json": "Last 10 hours of 1-minute data",
+    "historical.json": "Complete dataset with 1-hour candles",
+    "archive/1min/YYYY-MM-DD.json": "Daily 1-minute candle archives"
+  }
 }
