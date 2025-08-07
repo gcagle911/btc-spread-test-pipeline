@@ -181,23 +181,13 @@ def generate_recent_json(df_1min):
     recent_path = os.path.join(DATA_FOLDER, "recent.json")
     gcs_path = "recent.json"
     
-    # Check if recent.json exists locally or in GCS
+    # Check if recent.json exists in GCS first (prioritize live data)
     existing_data = None
     
-    # First check local file
-    if os.path.exists(recent_path):
+    # Try to download from GCS first (live data)
+    if download_from_gcs and GCS_AVAILABLE:
         try:
-            logger.info("📄 Loading existing local recent.json")
-            existing_data = pd.read_json(recent_path, orient="records")
-            logger.info(f"✅ Loaded {len(existing_data)} existing records from local recent.json")
-        except Exception as e:
-            logger.warning(f"⚠️ Failed to load local recent.json: {e}")
-            existing_data = None
-    
-    # If no local file, try to download from GCS
-    elif download_from_gcs and GCS_AVAILABLE:
-        try:
-            logger.info("📄 Downloading existing recent.json from GCS")
+            logger.info("📄 Downloading existing recent.json from GCS (live data)")
             if download_from_gcs(gcs_path, recent_path):
                 existing_data = pd.read_json(recent_path, orient="records")
                 logger.info(f"✅ Downloaded and loaded {len(existing_data)} existing records from GCS recent.json")
@@ -206,6 +196,16 @@ def generate_recent_json(df_1min):
                 existing_data = None
         except Exception as e:
             logger.warning(f"⚠️ Failed to download recent.json from GCS: {e}")
+            existing_data = None
+    
+    # Only check local file if GCS is not available or download failed
+    if existing_data is None and os.path.exists(recent_path):
+        try:
+            logger.info("📄 Loading existing local recent.json (fallback)")
+            existing_data = pd.read_json(recent_path, orient="records")
+            logger.info(f"✅ Loaded {len(existing_data)} existing records from local recent.json")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to load local recent.json: {e}")
             existing_data = None
     
     # Get new data for recent.json (last RECENT_HOURS hours)
@@ -224,21 +224,38 @@ def generate_recent_json(df_1min):
     
     # Combine existing and new data
     if existing_data is not None and not existing_data.empty:
-        # Convert timestamps to datetime for proper merging
-        existing_data['time_dt'] = pd.to_datetime(existing_data['time']).dt.tz_localize(None)
+        # Convert timestamps to datetime for proper merging - handle both timezone-aware and naive
+        try:
+            # Try parsing with timezone handling first
+            existing_data['time_dt'] = pd.to_datetime(existing_data['time'], errors='coerce')
+            # Remove timezone info if present
+            existing_data['time_dt'] = existing_data['time_dt'].dt.tz_localize(None)
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to parse existing timestamps: {e}")
+            # Fallback: try without timezone handling
+            existing_data['time_dt'] = pd.to_datetime(existing_data['time'], errors='coerce')
+        
         new_data['time_dt'] = pd.to_datetime(new_data['time']).dt.tz_localize(None)
         
-        # Remove duplicates based on timestamp
-        combined_data = pd.concat([existing_data, new_data], ignore_index=True)
-        combined_data = combined_data.drop_duplicates(subset=['time_dt'], keep='last')
+        # Remove any rows with invalid timestamps
+        existing_data = existing_data.dropna(subset=['time_dt'])
+        new_data = new_data.dropna(subset=['time_dt'])
         
-        # Sort by timestamp
-        combined_data = combined_data.sort_values('time_dt')
-        
-        # Remove temporary time_dt column
-        combined_data = combined_data.drop(columns=['time_dt'])
-        
-        logger.info(f"🔄 Merged {len(existing_data)} existing + {len(new_data)} new = {len(combined_data)} total records for recent.json")
+        if not existing_data.empty and not new_data.empty:
+            # Remove duplicates based on timestamp
+            combined_data = pd.concat([existing_data, new_data], ignore_index=True)
+            combined_data = combined_data.drop_duplicates(subset=['time_dt'], keep='last')
+            
+            # Sort by timestamp
+            combined_data = combined_data.sort_values('time_dt')
+            
+            # Remove temporary time_dt column
+            combined_data = combined_data.drop(columns=['time_dt'])
+            
+            logger.info(f"🔄 Merged {len(existing_data)} existing + {len(new_data)} new = {len(combined_data)} total records for recent.json")
+        else:
+            combined_data = new_data.drop(columns=['time_dt']) if not new_data.empty else existing_data.drop(columns=['time_dt'])
+            logger.info(f"🔄 Used available data: {len(combined_data)} records for recent.json")
     else:
         combined_data = new_data
         logger.info(f"🆕 Creating new recent.json with {len(combined_data)} records")
@@ -292,23 +309,13 @@ def generate_daily_archives(df_1min):
         file_path = os.path.join(ARCHIVE_FOLDER, filename)
         gcs_path = f"archive/1min/{filename}"
         
-        # Check if file exists locally or in GCS
+        # Check if file exists in GCS first (prioritize live data)
         existing_data = None
         
-        # First check local file
-        if os.path.exists(file_path):
+        # Try to download from GCS first (live data)
+        if download_from_gcs and GCS_AVAILABLE:
             try:
-                logger.info(f"📄 Loading existing local archive: {filename}")
-                existing_data = pd.read_json(file_path, orient="records")
-                logger.info(f"✅ Loaded {len(existing_data)} existing records from local {filename}")
-            except Exception as e:
-                logger.warning(f"⚠️ Failed to load local {filename}: {e}")
-                existing_data = None
-        
-        # If no local file, try to download from GCS
-        elif download_from_gcs and GCS_AVAILABLE:
-            try:
-                logger.info(f"📄 Downloading existing archive from GCS: {filename}")
+                logger.info(f"📄 Downloading existing archive from GCS: {filename} (live data)")
                 if download_from_gcs(gcs_path, file_path):
                     existing_data = pd.read_json(file_path, orient="records")
                     logger.info(f"✅ Downloaded and loaded {len(existing_data)} existing records from GCS {filename}")
@@ -319,23 +326,50 @@ def generate_daily_archives(df_1min):
                 logger.warning(f"⚠️ Failed to download {filename} from GCS: {e}")
                 existing_data = None
         
+        # Only check local file if GCS is not available or download failed
+        if existing_data is None and os.path.exists(file_path):
+            try:
+                logger.info(f"📄 Loading existing local archive: {filename} (fallback)")
+                existing_data = pd.read_json(file_path, orient="records")
+                logger.info(f"✅ Loaded {len(existing_data)} existing records from local {filename}")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to load local {filename}: {e}")
+                existing_data = None
+        
         # Combine existing and new data
         if existing_data is not None and not existing_data.empty:
-            # Convert timestamps to datetime for proper merging
-            existing_data['time_dt'] = pd.to_datetime(existing_data['time']).dt.tz_localize(None)
+            # Convert timestamps to datetime for proper merging - handle both timezone-aware and naive
+            try:
+                # Try parsing with timezone handling first
+                existing_data['time_dt'] = pd.to_datetime(existing_data['time'], errors='coerce')
+                # Remove timezone info if present
+                existing_data['time_dt'] = existing_data['time_dt'].dt.tz_localize(None)
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to parse existing timestamps: {e}")
+                # Fallback: try without timezone handling
+                existing_data['time_dt'] = pd.to_datetime(existing_data['time'], errors='coerce')
+            
             day_data_clean['time_dt'] = pd.to_datetime(day_data_clean['time']).dt.tz_localize(None)
             
-            # Remove duplicates based on timestamp
-            combined_data = pd.concat([existing_data, day_data_clean], ignore_index=True)
-            combined_data = combined_data.drop_duplicates(subset=['time_dt'], keep='last')
+            # Remove any rows with invalid timestamps
+            existing_data = existing_data.dropna(subset=['time_dt'])
+            day_data_clean = day_data_clean.dropna(subset=['time_dt'])
             
-            # Sort by timestamp
-            combined_data = combined_data.sort_values('time_dt')
-            
-            # Remove temporary time_dt column
-            combined_data = combined_data.drop(columns=['time_dt'])
-            
-            logger.info(f"🔄 Merged {len(existing_data)} existing + {len(day_data_clean)} new = {len(combined_data)} total records for {filename}")
+            if not existing_data.empty and not day_data_clean.empty:
+                # Remove duplicates based on timestamp
+                combined_data = pd.concat([existing_data, day_data_clean], ignore_index=True)
+                combined_data = combined_data.drop_duplicates(subset=['time_dt'], keep='last')
+                
+                # Sort by timestamp
+                combined_data = combined_data.sort_values('time_dt')
+                
+                # Remove temporary time_dt column
+                combined_data = combined_data.drop(columns=['time_dt'])
+                
+                logger.info(f"🔄 Merged {len(existing_data)} existing + {len(day_data_clean)} new = {len(combined_data)} total records for {filename}")
+            else:
+                combined_data = day_data_clean.drop(columns=['time_dt']) if not day_data_clean.empty else existing_data.drop(columns=['time_dt'])
+                logger.info(f"🔄 Used available data: {len(combined_data)} records for {filename}")
         else:
             combined_data = day_data_clean
             logger.info(f"🆕 Creating new archive: {filename} with {len(combined_data)} records")
@@ -377,23 +411,13 @@ def generate_historical_json(df_1hour):
     historical_path = os.path.join(DATA_FOLDER, "historical.json")
     gcs_path = "historical.json"
     
-    # Check if historical.json exists locally or in GCS
+    # Check if historical.json exists in GCS first (prioritize live data)
     existing_data = None
     
-    # First check local file
-    if os.path.exists(historical_path):
+    # Try to download from GCS first (live data)
+    if download_from_gcs and GCS_AVAILABLE:
         try:
-            logger.info("📄 Loading existing local historical.json")
-            existing_data = pd.read_json(historical_path, orient="records")
-            logger.info(f"✅ Loaded {len(existing_data)} existing records from local historical.json")
-        except Exception as e:
-            logger.warning(f"⚠️ Failed to load local historical.json: {e}")
-            existing_data = None
-    
-    # If no local file, try to download from GCS
-    elif download_from_gcs and GCS_AVAILABLE:
-        try:
-            logger.info("📄 Downloading existing historical.json from GCS")
+            logger.info("📄 Downloading existing historical.json from GCS (live data)")
             if download_from_gcs(gcs_path, historical_path):
                 existing_data = pd.read_json(historical_path, orient="records")
                 logger.info(f"✅ Downloaded and loaded {len(existing_data)} existing records from GCS historical.json")
@@ -404,26 +428,53 @@ def generate_historical_json(df_1hour):
             logger.warning(f"⚠️ Failed to download historical.json from GCS: {e}")
             existing_data = None
     
+    # Only check local file if GCS is not available or download failed
+    if existing_data is None and os.path.exists(historical_path):
+        try:
+            logger.info("📄 Loading existing local historical.json (fallback)")
+            existing_data = pd.read_json(historical_path, orient="records")
+            logger.info(f"✅ Loaded {len(existing_data)} existing records from local historical.json")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to load local historical.json: {e}")
+            existing_data = None
+    
     # Prepare new data for historical.json
     new_data = df_1hour.copy()
     
     # Combine existing and new data
     if existing_data is not None and not existing_data.empty:
-        # Convert timestamps to datetime for proper merging
-        existing_data['time_dt'] = pd.to_datetime(existing_data['time']).dt.tz_localize(None)
+        # Convert timestamps to datetime for proper merging - handle both timezone-aware and naive
+        try:
+            # Try parsing with timezone handling first
+            existing_data['time_dt'] = pd.to_datetime(existing_data['time'], errors='coerce')
+            # Remove timezone info if present
+            existing_data['time_dt'] = existing_data['time_dt'].dt.tz_localize(None)
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to parse existing timestamps: {e}")
+            # Fallback: try without timezone handling
+            existing_data['time_dt'] = pd.to_datetime(existing_data['time'], errors='coerce')
+        
         new_data['time_dt'] = pd.to_datetime(new_data['time']).dt.tz_localize(None)
         
-        # Remove duplicates based on timestamp
-        combined_data = pd.concat([existing_data, new_data], ignore_index=True)
-        combined_data = combined_data.drop_duplicates(subset=['time_dt'], keep='last')
+        # Remove any rows with invalid timestamps
+        existing_data = existing_data.dropna(subset=['time_dt'])
+        new_data = new_data.dropna(subset=['time_dt'])
         
-        # Sort by timestamp
-        combined_data = combined_data.sort_values('time_dt')
-        
-        # Remove temporary time_dt column
-        combined_data = combined_data.drop(columns=['time_dt'])
-        
-        logger.info(f"🔄 Merged {len(existing_data)} existing + {len(new_data)} new = {len(combined_data)} total records for historical.json")
+        if not existing_data.empty and not new_data.empty:
+            # Remove duplicates based on timestamp
+            combined_data = pd.concat([existing_data, new_data], ignore_index=True)
+            combined_data = combined_data.drop_duplicates(subset=['time_dt'], keep='last')
+            
+            # Sort by timestamp
+            combined_data = combined_data.sort_values('time_dt')
+            
+            # Remove temporary time_dt column
+            combined_data = combined_data.drop(columns=['time_dt'])
+            
+            logger.info(f"🔄 Merged {len(existing_data)} existing + {len(new_data)} new = {len(combined_data)} total records for historical.json")
+        else:
+            combined_data = new_data.drop(columns=['time_dt']) if not new_data.empty else existing_data.drop(columns=['time_dt'])
+            logger.info(f"🔄 Used available data: {len(combined_data)} records for historical.json")
     else:
         combined_data = new_data
         logger.info(f"🆕 Creating new historical.json with {len(combined_data)} records")
