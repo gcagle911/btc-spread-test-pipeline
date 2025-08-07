@@ -101,9 +101,10 @@ def upload_recent_csvs(hours_back=24):
     """
     logger.info(f"🔄 Starting recent CSV upload (last {hours_back} hours)...")
     
-    # Get current time and calculate cutoff
+    # Get current time and calculate cutoff using timedelta
+    from datetime import timedelta
     now = datetime.now(timezone.utc)
-    cutoff = now.replace(hour=now.hour - hours_back, minute=0, second=0, microsecond=0)
+    cutoff = now - timedelta(hours=hours_back)
     
     csv_files = glob.glob(os.path.join(DATA_FOLDER, "*.csv"))
     if not csv_files:
