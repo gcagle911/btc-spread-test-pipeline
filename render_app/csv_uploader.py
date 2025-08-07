@@ -38,8 +38,8 @@ def upload_csv_to_gcs(csv_file_path):
         filename = os.path.basename(csv_file_path)
         date_part = filename.split('_')[0]  # Get the date part before underscore
         
-        # Create GCS path: csv/YYYY-MM-DD.csv
-        gcs_path = f"csv/{date_part}.csv"
+        # Use full filename for GCS path to preserve all rotated files
+        gcs_path = f"csv/{filename}"
         
         # Upload with CSV content type
         success = upload_to_gcs(
