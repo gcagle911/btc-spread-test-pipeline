@@ -132,8 +132,8 @@ def resample_to_1min(df):
     logger.info(f"📊 Resampled to {len(df_1min)} 1-minute intervals")
     return df_1min
 
-def resample_to_1hour(df):
-    """Resample data to 1-hour intervals for historical data"""
+def resample_to_10min(df):
+    """Resample data to 10-minute intervals for historical data"""
     if df is None or df.empty:
         return None
     
@@ -141,27 +141,27 @@ def resample_to_1hour(df):
     df_indexed = df.set_index("timestamp")
     df_indexed.index = pd.to_datetime(df_indexed.index)
     
-    # Resample to 1-hour intervals
-    df_1hour = df_indexed.resample("1h").agg({
+    # Resample to 10-minute intervals
+    df_10min = df_indexed.resample("10min").agg({
         "price": "last",
         "spread_avg_L20_pct": "mean"
     }).dropna()
     
     # Calculate moving averages
-    df_1hour["ma_50"] = df_1hour["spread_avg_L20_pct"].rolling(window=50, min_periods=1).mean()
-    df_1hour["ma_100"] = df_1hour["spread_avg_L20_pct"].rolling(window=100, min_periods=1).mean()
-    df_1hour["ma_200"] = df_1hour["spread_avg_L20_pct"].rolling(window=200, min_periods=1).mean()
+    df_10min["ma_50"] = df_10min["spread_avg_L20_pct"].rolling(window=50, min_periods=1).mean()
+    df_10min["ma_100"] = df_10min["spread_avg_L20_pct"].rolling(window=100, min_periods=1).mean()
+    df_10min["ma_200"] = df_10min["spread_avg_L20_pct"].rolling(window=200, min_periods=1).mean()
     
     # Add data quality indicators
-    df_1hour["ma_50_valid"] = df_1hour["spread_avg_L20_pct"].rolling(window=50).count() >= 50
-    df_1hour["ma_100_valid"] = df_1hour["spread_avg_L20_pct"].rolling(window=100).count() >= 100
-    df_1hour["ma_200_valid"] = df_1hour["spread_avg_L20_pct"].rolling(window=200).count() >= 200
+    df_10min["ma_50_valid"] = df_10min["spread_avg_L20_pct"].rolling(window=50).count() >= 50
+    df_10min["ma_100_valid"] = df_10min["spread_avg_L20_pct"].rolling(window=100).count() >= 100
+    df_10min["ma_200_valid"] = df_10min["spread_avg_L20_pct"].rolling(window=200).count() >= 200
     
-    df_1hour.reset_index(inplace=True)
-    df_1hour.rename(columns={"timestamp": "time"}, inplace=True)
+    df_10min.reset_index(inplace=True)
+    df_10min.rename(columns={"timestamp": "time"}, inplace=True)
     
-    logger.info(f"📊 Resampled to {len(df_1hour)} 1-hour intervals")
-    return df_1hour
+    logger.info(f"📊 Resampled to {len(df_10min)} 10-minute intervals")
+    return df_10min
 
 def generate_recent_json(df_1min):
     """Generate recent.json with last 8-12 hours of 1-minute data"""
@@ -393,9 +393,9 @@ def generate_daily_archives(df_1min):
     logger.info(f"✅ Generated {len(daily_files)} daily archive files")
     return daily_files
 
-def generate_historical_json(df_1hour):
-    """Generate historical.json with 1-hour candles for long-term history"""
-    if df_1hour is None or df_1hour.empty:
+def generate_historical_json(df_10min):
+    """Generate historical.json with 10-minute candles for long-term history"""
+    if df_10min is None or df_10min.empty:
         logger.warning("⚠️ No data available for historical.json")
         return 0
     
@@ -407,7 +407,7 @@ def generate_historical_json(df_1hour):
         download_from_gcs = None
     
     # Constants for historical.json
-    HISTORICAL_JSON_LIMIT = 15000  # Keep last 15,000 entries (about 2 years of hourly data)
+    HISTORICAL_JSON_LIMIT = 9000  # Keep last 9,000 entries (about 2 months of 10-minute data)
     historical_path = os.path.join(DATA_FOLDER, "historical.json")
     gcs_path = "historical.json"
     
@@ -439,7 +439,7 @@ def generate_historical_json(df_1hour):
             existing_data = None
     
     # Prepare new data for historical.json
-    new_data = df_1hour.copy()
+    new_data = df_10min.copy()
     
     # Combine existing and new data
     if existing_data is not None and not existing_data.empty:
@@ -487,7 +487,7 @@ def generate_historical_json(df_1hour):
     # Save historical.json locally
     combined_data.to_json(historical_path, orient="records", date_format="iso")
     
-    logger.info(f"📚 Generated historical.json: {len(combined_data)} records (1-hour candles, max {HISTORICAL_JSON_LIMIT} entries)")
+    logger.info(f"📚 Generated historical.json: {len(combined_data)} records (10-minute candles, max {HISTORICAL_JSON_LIMIT} entries)")
     
     # Upload to GCS
     if GCS_AVAILABLE:
@@ -514,9 +514,9 @@ def generate_index_json(recent_count, historical_count, daily_files):
             },
             "historical": {
                 "file": "historical.json", 
-                "description": "Complete dataset with 1-hour candles",
+                "description": "Complete dataset with 10-minute candles",
                 "records": historical_count,
-                "update_frequency": "hourly"
+                "update_frequency": "every_10_minutes"
             },
             "daily_archives": {
                 "folder": "archive/1min/",
@@ -527,7 +527,7 @@ def generate_index_json(recent_count, historical_count, daily_files):
         },
         "file_structure": {
             "recent.json": f"Last {RECENT_HOURS} hours of 1-minute data",
-            "historical.json": "Complete dataset with 1-hour candles", 
+            "historical.json": "Complete dataset with 10-minute candles", 
             "archive/1min/YYYY-MM-DD.json": "Daily 1-minute candle archives"
         }
     }
@@ -560,15 +560,15 @@ def generate_all_jsons():
         return False
     
     # Resample to 1-hour intervals for historical data
-    df_1hour = resample_to_1hour(df_raw)
-    if df_1hour is None:
-        logger.error("❌ Failed to resample to 1-hour intervals")
+    df_10min = resample_to_10min(df_raw)
+    if df_10min is None:
+        logger.error("❌ Failed to resample to 10-minute intervals")
         return False
     
     # Generate all JSON files
     recent_count = generate_recent_json(df_1min)
     daily_files = generate_daily_archives(df_1min)
-    historical_count = generate_historical_json(df_1hour)
+    historical_count = generate_historical_json(df_10min)
     index_data = generate_index_json(recent_count, historical_count, daily_files)
     
     logger.info("✅ Scalable JSON generation completed (recent data only)!")
