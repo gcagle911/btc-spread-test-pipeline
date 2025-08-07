@@ -39,9 +39,8 @@ JSON_UPDATE_INTERVAL = 60  # Update JSONs every 60 seconds
 last_json_update = {"timestamp": None}
 
 # CSV upload configuration
-CSV_UPLOAD_INTERVAL = 300  # Upload CSVs every 5 minutes (300 seconds) instead of every hour
+CSV_UPLOAD_INTERVAL = 3600  # Upload CSVs every hour (3600 seconds) - back to original frequency
 last_csv_upload = {"timestamp": None}
-last_current_csv_upload = {"timestamp": None}  # Separate timestamp for current file uploads
 
 # 🔁 Rotates files every 8 hours (00, 08, 16 UTC)
 def get_current_csv_filename():
@@ -121,20 +120,6 @@ def log_data():
             last_logged["timestamp"] = data["timestamp"]
             print(f"[{data['timestamp']}] ✅ Logged to {os.path.basename(current_csv_file)}")
 
-            # Upload current CSV file to GCS after each write (for real-time updates)
-            if CSV_UPLOAD_AVAILABLE and os.path.exists(current_csv_file):
-                try:
-                    # Only upload if enough time has passed since last upload (to avoid spam)
-                    current_time = datetime.now(UTC)
-                    if (last_current_csv_upload["timestamp"] is None or 
-                        (current_time - last_current_csv_upload["timestamp"]).total_seconds() >= 60):  # Upload every minute
-                        print(f"🔄 Uploading current CSV file to GCS: {os.path.basename(current_csv_file)}")
-                        upload_csv_to_gcs(current_csv_file)
-                        last_current_csv_upload["timestamp"] = current_time
-                        print(f"✅ Uploaded current CSV file: {os.path.basename(current_csv_file)}")
-                except Exception as e:
-                    print(f"❌ Failed to upload current CSV file {current_csv_file}: {e}")
-
             # Check if JSON update is needed (every 60 seconds)
             current_time = datetime.now(UTC)
             if (last_json_update["timestamp"] is None or 
@@ -148,7 +133,7 @@ def log_data():
                 except Exception as e:
                     print(f"❌ JSON generation error: {e}")
 
-            # Check if CSV upload is needed (every 5 minutes for all recent files)
+            # Check if CSV upload is needed (every hour for all recent files)
             if CSV_UPLOAD_AVAILABLE and (last_csv_upload["timestamp"] is None or 
                 (current_time - last_csv_upload["timestamp"]).total_seconds() >= CSV_UPLOAD_INTERVAL):
                 
