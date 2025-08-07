@@ -1,6 +1,7 @@
 # BTC Logger - Enhanced for Historical Data Support
 # Updated: 2025-07-10 - Added hybrid data endpoints and improved debugging
 # Updated: 2025-08-07 - Integrated scalable JSON generation system
+# Updated: 2025-08-07 - Added CSV upload to GCS functionality
 
 from flask_cors import CORS
 from scalable_json_generator import generate_all_jsons
@@ -12,6 +13,14 @@ from datetime import datetime, UTC
 from flask import Flask, jsonify, send_file, send_from_directory, abort
 import threading
 import logging
+
+# Import CSV uploader
+try:
+    from csv_uploader import upload_csv_to_gcs, upload_recent_csvs
+    CSV_UPLOAD_AVAILABLE = True
+except ImportError:
+    CSV_UPLOAD_AVAILABLE = False
+    logging.warning("⚠️ CSV uploader not available - CSV files will only be saved locally")
 
 app = Flask(__name__)
 CORS(app)
@@ -28,6 +37,10 @@ os.makedirs(DATA_FOLDER, exist_ok=True)
 # JSON generation configuration
 JSON_UPDATE_INTERVAL = 60  # Update JSONs every 60 seconds
 last_json_update = {"timestamp": None}
+
+# CSV upload configuration
+CSV_UPLOAD_INTERVAL = 3600  # Upload CSVs every hour (3600 seconds)
+last_csv_upload = {"timestamp": None}
 
 # 🔁 Rotates files every 8 hours (00, 08, 16 UTC)
 def get_current_csv_filename():
@@ -77,21 +90,35 @@ def fetch_orderbook():
     }
 
 def log_data():
+    last_csv_file = None  # Track the last CSV file we were writing to
+    
     while True:
         start_time = time.time()
         try:
             data = fetch_orderbook()
-            filename = os.path.join(DATA_FOLDER, get_current_csv_filename())
-            file_exists = os.path.isfile(filename)
+            current_csv_file = os.path.join(DATA_FOLDER, get_current_csv_filename())
+            file_exists = os.path.isfile(current_csv_file)
 
-            with open(filename, "a", newline="") as f:
+            # Check if we've rotated to a new CSV file
+            if last_csv_file is not None and last_csv_file != current_csv_file:
+                # CSV file rotation detected - upload the completed file
+                if CSV_UPLOAD_AVAILABLE and os.path.exists(last_csv_file):
+                    try:
+                        print(f"🔄 CSV file rotated, uploading {os.path.basename(last_csv_file)} to GCS...")
+                        upload_csv_to_gcs(last_csv_file)
+                        print(f"✅ Uploaded rotated CSV file: {os.path.basename(last_csv_file)}")
+                    except Exception as e:
+                        print(f"❌ Failed to upload rotated CSV file {last_csv_file}: {e}")
+
+            with open(current_csv_file, "a", newline="") as f:
                 writer = csv.DictWriter(f, fieldnames=data.keys())
                 if not file_exists:
                     writer.writeheader()
                 writer.writerow(data)
 
+            last_csv_file = current_csv_file  # Update the last CSV file
             last_logged["timestamp"] = data["timestamp"]
-            print(f"[{data['timestamp']}] ✅ Logged to {filename}")
+            print(f"[{data['timestamp']}] ✅ Logged to {os.path.basename(current_csv_file)}")
 
             # Check if JSON update is needed (every 60 seconds)
             current_time = datetime.now(UTC)
@@ -105,6 +132,18 @@ def log_data():
                     print("✅ JSON files updated successfully")
                 except Exception as e:
                     print(f"❌ JSON generation error: {e}")
+
+            # Check if CSV upload is needed (every hour)
+            if CSV_UPLOAD_AVAILABLE and (last_csv_upload["timestamp"] is None or 
+                (current_time - last_csv_upload["timestamp"]).total_seconds() >= CSV_UPLOAD_INTERVAL):
+                
+                try:
+                    print("🔄 Uploading recent CSV files to GCS...")
+                    upload_recent_csvs()
+                    last_csv_upload["timestamp"] = current_time
+                    print("✅ CSV files uploaded successfully")
+                except Exception as e:
+                    print(f"❌ CSV upload error: {e}")
 
         except Exception as e:
             print("🚨 Error in logger loop:", str(e))

@@ -3,7 +3,7 @@
 Google Cloud Storage Uploader for BTC Chart Data
 ================================================
 
-This module provides a simple function to upload JSON files to Google Cloud Storage.
+This module provides a simple function to upload JSON and CSV files to Google Cloud Storage.
 It uses environment variables for authentication and configuration.
 """
 
@@ -17,14 +17,16 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def upload_to_gcs(local_path, gcs_path, bucket_name="garrettc-btc-bidspreadl20-data"):
+def upload_to_gcs(local_path, gcs_path, bucket_name="garrettc-btc-bidspreadl20-data", content_type=None, public=False):
     """
     Upload a file to Google Cloud Storage
     
     Args:
         local_path (str): Local file path to upload
-        gcs_path (str): GCS destination path (e.g., "recent.json", "archive/1min/2025-08-07.json")
+        gcs_path (str): GCS destination path (e.g., "recent.json", "csv/2025-08-07.csv")
         bucket_name (str): GCS bucket name (default: "garrettc-btc-bidspreadl20-data")
+        content_type (str): Content type for the file (e.g., "text/csv", "application/json")
+        public (bool): Whether to make the file publicly readable (default: False)
     
     Returns:
         bool: True if upload successful, False otherwise
@@ -58,11 +60,21 @@ def upload_to_gcs(local_path, gcs_path, bucket_name="garrettc-btc-bidspreadl20-d
         # Create blob and upload
         blob = bucket.blob(gcs_path)
         
+        # Set content type if provided
+        if content_type:
+            blob.content_type = content_type
+        
         # Upload file in binary mode
         with open(local_path, 'rb') as f:
             blob.upload_from_file(f)
         
-        logger.info(f"✅ Uploaded {local_path} to gs://{bucket_name}/{gcs_path}")
+        # Make file publicly readable if requested
+        if public:
+            blob.make_public()
+            logger.info(f"✅ Uploaded {local_path} to gs://{bucket_name}/{gcs_path} (public)")
+        else:
+            logger.info(f"✅ Uploaded {local_path} to gs://{bucket_name}/{gcs_path}")
+        
         return True
         
     except Exception as e:
