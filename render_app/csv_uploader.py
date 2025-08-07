@@ -41,12 +41,11 @@ def upload_csv_to_gcs(csv_file_path):
         # Create GCS path: csv/YYYY-MM-DD.csv
         gcs_path = f"csv/{date_part}.csv"
         
-        # Upload with CSV content type and public access
+        # Upload with CSV content type
         success = upload_to_gcs(
             local_path=csv_file_path,
             gcs_path=gcs_path,
-            content_type="text/csv",
-            public=True
+            content_type="text/csv"
         )
         
         if success:

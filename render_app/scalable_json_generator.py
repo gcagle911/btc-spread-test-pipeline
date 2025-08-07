@@ -192,7 +192,7 @@ def generate_recent_json(df_1min):
     # Upload to GCS
     if GCS_AVAILABLE:
         try:
-            if upload_to_gcs(recent_path, "recent.json", content_type="application/json", public=True):
+            if upload_to_gcs(recent_path, "recent.json", content_type="application/json"):
                 logger.info("✅ Uploaded recent.json to GCS")
             else:
                 logger.warning("⚠️ Failed to upload recent.json to GCS")
@@ -230,7 +230,7 @@ def generate_daily_archives(df_1min):
         if GCS_AVAILABLE:
             try:
                 gcs_path = f"archive/1min/{filename}"
-                if upload_to_gcs(file_path, gcs_path, content_type="application/json", public=True):
+                if upload_to_gcs(file_path, gcs_path, content_type="application/json"):
                     logger.info(f"✅ Uploaded {filename} to GCS")
                 else:
                     logger.warning(f"⚠️ Failed to upload {filename} to GCS")
@@ -255,7 +255,7 @@ def generate_historical_json(df_1hour):
     # Upload to GCS
     if GCS_AVAILABLE:
         try:
-            if upload_to_gcs(historical_path, "historical.json", content_type="application/json", public=True):
+            if upload_to_gcs(historical_path, "historical.json", content_type="application/json"):
                 logger.info("✅ Uploaded historical.json to GCS")
             else:
                 logger.warning("⚠️ Failed to upload historical.json to GCS")

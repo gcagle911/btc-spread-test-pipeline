@@ -26,7 +26,7 @@ def upload_to_gcs(local_path, gcs_path, bucket_name="garrettc-btc-bidspreadl20-d
         gcs_path (str): GCS destination path (e.g., "recent.json", "csv/2025-08-07.csv")
         bucket_name (str): GCS bucket name (default: "garrettc-btc-bidspreadl20-data")
         content_type (str): Content type for the file (e.g., "text/csv", "application/json")
-        public (bool): Whether to make the file publicly readable (default: False)
+        public (bool): Whether to make the file publicly readable (default: False) - IGNORED for uniform bucket access
     
     Returns:
         bool: True if upload successful, False otherwise
@@ -68,13 +68,7 @@ def upload_to_gcs(local_path, gcs_path, bucket_name="garrettc-btc-bidspreadl20-d
         with open(local_path, 'rb') as f:
             blob.upload_from_file(f)
         
-        # Make file publicly readable if requested
-        if public:
-            blob.make_public()
-            logger.info(f"✅ Uploaded {local_path} to gs://{bucket_name}/{gcs_path} (public)")
-        else:
-            logger.info(f"✅ Uploaded {local_path} to gs://{bucket_name}/{gcs_path}")
-        
+        logger.info(f"✅ Uploaded {local_path} to gs://{bucket_name}/{gcs_path}")
         return True
         
     except Exception as e:
