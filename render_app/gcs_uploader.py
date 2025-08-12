@@ -12,6 +12,7 @@ import json
 from google.cloud import storage
 from google.oauth2 import service_account
 import logging
+import mimetypes
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -76,18 +77,28 @@ def upload_to_gcs(local_path, gcs_path, bucket_name="garrettc-btc-bidspreadl20-d
         if not client or not bucket:
             return False
         
-        # Create blob and upload
+        # Create blob
         blob = bucket.blob(gcs_path)
         
-        # Set content type if provided
-        if content_type:
-            blob.content_type = content_type
+        # Infer content type if not provided
+        if not content_type:
+            guessed_type, _ = mimetypes.guess_type(local_path)
+            content_type = guessed_type or "application/octet-stream"
+            # Override for common types if needed
+            if local_path.lower().endswith(".json"):
+                content_type = "application/json"
+            elif local_path.lower().endswith(".csv"):
+                content_type = "text/csv"
         
-        # Upload file in binary mode
+        # Set metadata to reduce caching issues in browsers/console
+        blob.cache_control = "no-cache, max-age=0"
+        blob.content_type = content_type
+        
+        # Upload file and explicitly pass content_type
         with open(local_path, 'rb') as f:
-            blob.upload_from_file(f)
+            blob.upload_from_file(f, content_type=content_type)
         
-        logger.info(f"✅ Uploaded {local_path} to gs://{bucket_name}/{gcs_path}")
+        logger.info(f"✅ Uploaded {local_path} to gs://{bucket_name}/{gcs_path} (Content-Type: {content_type})")
         return True
         
     except Exception as e:

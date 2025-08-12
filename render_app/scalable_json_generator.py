@@ -17,6 +17,7 @@ import json
 from datetime import datetime, timedelta, timezone
 import glob
 import logging
+import numpy as np
 
 # Import GCS uploader
 try:
@@ -34,6 +35,21 @@ logger = logging.getLogger(__name__)
 DATA_FOLDER = "render_app/data"
 ARCHIVE_FOLDER = os.path.join(DATA_FOLDER, "archive", "1min")
 RECENT_HOURS = 48  # 48 hours (2 days) of recent data
+
+def write_json_records(dataframe, destination_path):
+    """Write a pandas DataFrame to a JSON file as an array of records with strict JSON compliance.
+
+    Replaces any NaN/Infinity values with null to avoid invalid JSON tokens that some viewers cannot render.
+    """
+    try:
+        # Replace NaN/Inf with None to ensure valid JSON (no NaN, Infinity, -Infinity tokens)
+        sanitized_df = dataframe.replace({np.nan: None, np.inf: None, -np.inf: None})
+        records = sanitized_df.to_dict(orient="records")
+        with open(destination_path, "w", encoding="utf-8") as output_file:
+            json.dump(records, output_file, ensure_ascii=False, allow_nan=False)
+    except Exception as exc:
+        logger.error(f"❌ Failed to write JSON to {destination_path}: {exc}")
+        raise
 
 def ensure_directories():
     """Ensure all required directories exist"""
@@ -265,8 +281,8 @@ def generate_recent_json(df_1min):
         combined_data = combined_data.tail(RECENT_JSON_LIMIT)
         logger.info(f"✂️ Trimmed recent.json to last {RECENT_JSON_LIMIT} entries")
     
-    # Save recent.json locally
-    combined_data.to_json(recent_path, orient="records", date_format="iso")
+    # Save recent.json locally with strict JSON (no NaN/Inf)
+    write_json_records(combined_data, recent_path)
     
     logger.info(f"⚡ Generated recent.json: {len(combined_data)} records (last {RECENT_HOURS} hours, max {RECENT_JSON_LIMIT} entries)")
     
@@ -374,8 +390,8 @@ def generate_daily_archives(df_1min):
             combined_data = day_data_clean
             logger.info(f"🆕 Creating new archive: {filename} with {len(combined_data)} records")
         
-        # Save daily archive locally
-        combined_data.to_json(file_path, orient="records", date_format="iso")
+        # Save daily archive locally with strict JSON (no NaN/Inf)
+        write_json_records(combined_data, file_path)
         daily_files.append(filename)
         
         logger.info(f"📅 Generated daily archive: {filename} ({len(combined_data)} records)")
@@ -484,8 +500,8 @@ def generate_historical_json(df_10min):
         combined_data = combined_data.tail(HISTORICAL_JSON_LIMIT)
         logger.info(f"✂️ Trimmed historical.json to last {HISTORICAL_JSON_LIMIT} entries")
     
-    # Save historical.json locally
-    combined_data.to_json(historical_path, orient="records", date_format="iso")
+    # Save historical.json locally with strict JSON (no NaN/Inf)
+    write_json_records(combined_data, historical_path)
     
     logger.info(f"📚 Generated historical.json: {len(combined_data)} records (10-minute candles, max {HISTORICAL_JSON_LIMIT} entries)")
     

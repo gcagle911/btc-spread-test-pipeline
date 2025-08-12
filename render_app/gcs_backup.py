@@ -10,6 +10,7 @@ from datetime import datetime, UTC
 from google.cloud import storage
 from google.oauth2 import service_account
 import logging
+import mimetypes
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -85,6 +86,16 @@ class GCSBackup:
                 'file_size': str(os.path.getsize(local_path))
             })
             
+            # Guess and set content type and cache control
+            guessed_type, _ = mimetypes.guess_type(local_path)
+            content_type = guessed_type or 'application/octet-stream'
+            if local_path.lower().endswith('.json'):
+                content_type = 'application/json'
+            elif local_path.lower().endswith('.csv'):
+                content_type = 'text/csv'
+            blob.content_type = content_type
+            blob.cache_control = 'no-cache, max-age=0'
+
             blob.upload_from_filename(local_path)
             logger.info(f"✅ Uploaded: {local_path} → gs://{self.bucket_name}/{gcs_path}")
             return True
@@ -153,9 +164,10 @@ class GCSBackup:
         try:
             blob = self.bucket.blob(gcs_path)
             blob.metadata = {
-                'upload_timestamp': datetime.now(UTC).isoformat(),
-                'content_type': 'application/json'
+                'upload_timestamp': datetime.now(UTC).isoformat()
             }
+            blob.content_type = 'application/json'
+            blob.cache_control = 'no-cache, max-age=0'
             blob.upload_from_string(json.dumps(data, indent=2), content_type='application/json')
             logger.info(f"✅ Uploaded JSON data → gs://{self.bucket_name}/{gcs_path}")
             return True
