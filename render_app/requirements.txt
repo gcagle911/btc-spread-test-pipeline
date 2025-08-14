@@ -2,4 +2,5 @@ flask
 flask-cors
 requests
 pandas
+numpy
 google-cloud-storage
