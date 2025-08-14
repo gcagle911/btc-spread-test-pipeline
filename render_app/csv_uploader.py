@@ -19,12 +19,13 @@ logger = logging.getLogger(__name__)
 
 DATA_FOLDER = "render_app/data"
 
-def upload_csv_to_gcs(csv_file_path):
+def upload_csv_to_gcs(csv_file_path, bucket_name=None):
     """
     Upload a CSV file to GCS with proper content type and public access
     
     Args:
         csv_file_path (str): Local path to the CSV file
+        bucket_name (str|None): Optional target bucket; defaults to env var if None
     
     Returns:
         bool: True if upload successful, False otherwise
@@ -45,7 +46,8 @@ def upload_csv_to_gcs(csv_file_path):
         success = upload_to_gcs(
             local_path=csv_file_path,
             gcs_path=gcs_path,
-            content_type="text/csv"
+            content_type="text/csv",
+            bucket_name=bucket_name
         )
         
         if success:
@@ -59,7 +61,7 @@ def upload_csv_to_gcs(csv_file_path):
         logger.error(f"❌ CSV upload error for {csv_file_path}: {e}")
         return False
 
-def upload_all_csvs():
+def upload_all_csvs(bucket_name=None):
     """
     Upload all CSV files in the data folder to GCS
     
@@ -77,7 +79,7 @@ def upload_all_csvs():
     failed_count = 0
     
     for csv_file in csv_files:
-        if upload_csv_to_gcs(csv_file):
+        if upload_csv_to_gcs(csv_file, bucket_name=bucket_name):
             uploaded_count += 1
         else:
             failed_count += 1
@@ -89,12 +91,13 @@ def upload_all_csvs():
         "total": len(csv_files)
     }
 
-def upload_recent_csvs(hours_back=24):
+def upload_recent_csvs(hours_back=24, bucket_name=None):
     """
     Upload only recent CSV files (within the specified hours)
     
     Args:
         hours_back (int): Number of hours back to consider "recent"
+        bucket_name (str|None): Optional target bucket; defaults to env var if None
     
     Returns:
         dict: Summary of upload results
@@ -119,7 +122,7 @@ def upload_recent_csvs(hours_back=24):
             # Check file modification time
             file_mtime = datetime.fromtimestamp(os.path.getmtime(csv_file), tz=timezone.utc)
             if file_mtime >= cutoff:
-                if upload_csv_to_gcs(csv_file):
+                if upload_csv_to_gcs(csv_file, bucket_name=bucket_name):
                     uploaded_count += 1
                 else:
                     failed_count += 1

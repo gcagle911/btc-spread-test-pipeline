@@ -179,7 +179,7 @@ def resample_to_10min(df):
     logger.info(f"📊 Resampled to {len(df_10min)} 10-minute intervals")
     return df_10min
 
-def generate_recent_json(df_1min):
+def generate_recent_json(df_1min, bucket_name=None):
     """Generate recent.json with last 2 days of 1-minute data"""
     if df_1min is None or df_1min.empty:
         logger.warning("⚠️ No data available for recent.json")
@@ -204,7 +204,7 @@ def generate_recent_json(df_1min):
     if download_from_gcs and GCS_AVAILABLE:
         try:
             logger.info("📄 Downloading existing recent.json from GCS (live data)")
-            if download_from_gcs(gcs_path, recent_path):
+            if download_from_gcs(gcs_path, recent_path, bucket_name=bucket_name):
                 existing_data = pd.read_json(recent_path, orient="records")
                 logger.info(f"✅ Downloaded and loaded {len(existing_data)} existing records from GCS recent.json")
             else:
@@ -289,7 +289,7 @@ def generate_recent_json(df_1min):
     # Upload to GCS
     if GCS_AVAILABLE:
         try:
-            if upload_to_gcs(recent_path, gcs_path, content_type="application/json"):
+            if upload_to_gcs(recent_path, gcs_path, bucket_name=bucket_name, content_type="application/json"):
                 logger.info("✅ Uploaded recent.json to GCS")
             else:
                 logger.warning("⚠️ Failed to upload recent.json to GCS")
@@ -298,7 +298,7 @@ def generate_recent_json(df_1min):
     
     return len(combined_data)
 
-def generate_daily_archives(df_1min):
+def generate_daily_archives(df_1min, bucket_name=None):
     """Generate daily archive files in archive/1min/YYYY-MM-DD.json format"""
     if df_1min is None or df_1min.empty:
         logger.warning("⚠️ No data available for daily archives")
@@ -332,7 +332,7 @@ def generate_daily_archives(df_1min):
         if download_from_gcs and GCS_AVAILABLE:
             try:
                 logger.info(f"📄 Downloading existing archive from GCS: {filename} (live data)")
-                if download_from_gcs(gcs_path, file_path):
+                if download_from_gcs(gcs_path, file_path, bucket_name=bucket_name):
                     existing_data = pd.read_json(file_path, orient="records")
                     logger.info(f"✅ Downloaded and loaded {len(existing_data)} existing records from GCS {filename}")
                 else:
@@ -399,7 +399,7 @@ def generate_daily_archives(df_1min):
         # Upload to GCS
         if GCS_AVAILABLE:
             try:
-                if upload_to_gcs(file_path, gcs_path, content_type="application/json"):
+                if upload_to_gcs(file_path, gcs_path, bucket_name=bucket_name, content_type="application/json"):
                     logger.info(f"✅ Uploaded {filename} to GCS")
                 else:
                     logger.warning(f"⚠️ Failed to upload {filename} to GCS")
@@ -409,7 +409,7 @@ def generate_daily_archives(df_1min):
     logger.info(f"✅ Generated {len(daily_files)} daily archive files")
     return daily_files
 
-def generate_historical_json(df_10min):
+def generate_historical_json(df_10min, bucket_name=None):
     """Generate historical.json with 10-minute candles for long-term history"""
     if df_10min is None or df_10min.empty:
         logger.warning("⚠️ No data available for historical.json")
@@ -434,7 +434,7 @@ def generate_historical_json(df_10min):
     if download_from_gcs and GCS_AVAILABLE:
         try:
             logger.info("📄 Downloading existing historical.json from GCS (live data)")
-            if download_from_gcs(gcs_path, historical_path):
+            if download_from_gcs(gcs_path, historical_path, bucket_name=bucket_name):
                 existing_data = pd.read_json(historical_path, orient="records")
                 logger.info(f"✅ Downloaded and loaded {len(existing_data)} existing records from GCS historical.json")
             else:
@@ -508,7 +508,7 @@ def generate_historical_json(df_10min):
     # Upload to GCS
     if GCS_AVAILABLE:
         try:
-            if upload_to_gcs(historical_path, gcs_path, content_type="application/json"):
+            if upload_to_gcs(historical_path, gcs_path, bucket_name=bucket_name, content_type="application/json"):
                 logger.info("✅ Uploaded historical.json to GCS")
             else:
                 logger.warning("⚠️ Failed to upload historical.json to GCS")
@@ -556,7 +556,7 @@ def generate_index_json(recent_count, historical_count, daily_files):
     logger.info(f"📋 Generated index.json with {len(daily_files)} daily archives")
     return index_data
 
-def generate_all_jsons():
+def generate_all_jsons(bucket_name=None):
     """Main function to generate all JSON files from recent data only"""
     logger.info("🚀 Starting scalable JSON generation (recent data only)...")
     
@@ -582,9 +582,9 @@ def generate_all_jsons():
         return False
     
     # Generate all JSON files
-    recent_count = generate_recent_json(df_1min)
-    daily_files = generate_daily_archives(df_1min)
-    historical_count = generate_historical_json(df_10min)
+    recent_count = generate_recent_json(df_1min, bucket_name=bucket_name)
+    daily_files = generate_daily_archives(df_1min, bucket_name=bucket_name)
+    historical_count = generate_historical_json(df_10min, bucket_name=bucket_name)
     index_data = generate_index_json(recent_count, historical_count, daily_files)
     
     logger.info("✅ Scalable JSON generation completed (recent data only)!")
